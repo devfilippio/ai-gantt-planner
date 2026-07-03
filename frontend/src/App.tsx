@@ -1,10 +1,14 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { usePlanStore } from './store/planStore';
 import { GanttChart } from './components/GanttChart';
+import { ChatPanel } from './components/ChatPanel';
+import { TaskModal } from './components/TaskModal';
+import { Toolbar } from './components/Toolbar';
 import './App.css';
 
 function App() {
   const loadPlan = usePlanStore((state) => state.loadPlan);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
 
   useEffect(() => {
     void loadPlan();
@@ -13,11 +17,20 @@ function App() {
   return (
     <main className="app-shell">
       <div className="app-shell__chart">
-        <GanttChart onSelectTask={() => {}} />
+        <Toolbar />
+        <GanttChart onSelectTask={setSelectedTaskId} />
       </div>
       <aside className="app-shell__chat" aria-label="AI-агент">
-        <span className="app-shell__chat-label">AI-АГЕНТ</span>
+        <ChatPanel />
       </aside>
+
+      {selectedTaskId && (
+        <TaskModal
+          taskId={selectedTaskId}
+          onClose={() => setSelectedTaskId(null)}
+          onSelectTask={setSelectedTaskId}
+        />
+      )}
     </main>
   );
 }
