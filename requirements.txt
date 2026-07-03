@@ -4,5 +4,8 @@ pydantic==2.13.4
 openpyxl==3.1.5
 openai==1.59.6
 mcp==1.28.1
-psycopg[binary]==3.2.3
 python-multipart==0.0.20
+# psycopg is imported lazily only when DATABASE_URL is set (PostgresStore).
+# It's kept out of the default install because psycopg-binary has no wheel for
+# the Python 3.14 build image; to enable Neon persistence, deploy on Python 3.13
+# and add:  psycopg[binary]==3.2.3
