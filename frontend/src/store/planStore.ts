@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { getPlan, resetPlan, undoPlan } from '../api/client';
+import { getPlan, resetPlan, undoPlan, updateTask, type TaskUpdate } from '../api/client';
 import type { Plan, PlanPatch, Scheduled } from '../types';
 
 const HIGHLIGHT_DURATION_MS = 1200;
@@ -22,11 +22,12 @@ interface PlanState {
   applyPatch: (patch: PlanPatch) => void;
   pushChat: (message: ChatMessage) => void;
   undo: () => Promise<void>;
+  resizeTask: (id: string, patch: TaskUpdate) => Promise<void>;
 }
 
 let highlightTimer: ReturnType<typeof setTimeout> | undefined;
 
-export const usePlanStore = create<PlanState>((set) => ({
+export const usePlanStore = create<PlanState>((set, get) => ({
   plan: null,
   schedule: [],
   changedIds: [],
@@ -77,6 +78,21 @@ export const usePlanStore = create<PlanState>((set) => ({
       set({ plan, schedule, loading: false, changedIds: [] });
     } catch (err) {
       set({ error: (err as Error).message, loading: false });
+    }
+  },
+
+  resizeTask: async (id: string, patch: TaskUpdate) => {
+    const previous = { plan: get().plan, schedule: get().schedule };
+    try {
+      const { plan, schedule } = await updateTask(id, patch);
+      set({ plan, schedule, changedIds: [id] });
+      if (highlightTimer) clearTimeout(highlightTimer);
+      highlightTimer = setTimeout(() => {
+        set({ changedIds: [] });
+      }, HIGHLIGHT_DURATION_MS);
+    } catch (err) {
+      // Revert optimistic UI on failure — the dragged bar snaps back.
+      set({ ...previous, error: (err as Error).message });
     }
   },
 }));

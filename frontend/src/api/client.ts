@@ -43,6 +43,25 @@ export async function undoPlan(): Promise<PlanAndSchedule> {
   return handleJson<PlanAndSchedule>(res);
 }
 
+export interface TaskUpdate {
+  duration_days?: number;
+  start?: string;
+  predecessors?: string[];
+  assignee?: string;
+}
+
+export async function updateTask(
+  id: string,
+  patch: TaskUpdate,
+): Promise<PlanAndSchedule> {
+  const res = await fetch(`${API_BASE}/api/plan/task/${encodeURIComponent(id)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+  return handleJson<PlanAndSchedule>(res);
+}
+
 export async function streamChat(
   message: string,
   onEvent: (event: AgentEvent) => void,
