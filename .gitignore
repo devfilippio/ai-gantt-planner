@@ -1,5 +1,6 @@
 .env
 .env.local
+.claude/
 node_modules/
 __pycache__/
 *.pyc
