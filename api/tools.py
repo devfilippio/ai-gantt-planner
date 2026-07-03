@@ -133,12 +133,33 @@ def reassign_tasks(plan: Plan, *, from_assignee: str, to_assignee: str) -> PlanP
     return _patch(Plan(tasks=tasks, project_start=plan.project_start), changed)
 
 
-def shift_tasks(plan: Plan, *, assignee: str, days: int) -> PlanPatch:
-    """True shift: moves an assignee's tasks later (or earlier, for negative
-    `days`) by adjusting `lead_days`, leaving `duration_days` — and therefore
-    effort — untouched. Negative `days` reduces lead_days, clamped at 0 (a
-    task can't start before the later of its predecessors' end / project
-    start)."""
+def shift_tasks(plan: Plan, *, days: int, assignee: str | None = None) -> PlanPatch:
+    """True shift: moves tasks later (or earlier, for negative `days`) by
+    adjusting `lead_days`, leaving `duration_days` — and therefore effort —
+    untouched. With `assignee` set, only that person's tasks move; without it
+    («передвинь все задачи на 3 дня») the WHOLE plan shifts. Negative `days`
+    reduces lead_days, clamped at 0 (a task can't start before the later of
+    its predecessors' end / project start).
+
+    Note on shift-all semantics: lead applies after predecessors, so bumping
+    every task's lead by N moves the project as a chain — root tasks start N
+    days later and everything downstream follows; dependent tasks don't get
+    an extra N stacked visually because their own lead delays them relative
+    to already-shifted predecessors only."""
+    if assignee is None:
+        # Shifting the whole plan = delaying its roots. Bumping lead on EVERY
+        # task would compound N through every dependency level (a chain of 3
+        # tasks would end 3*N later). Only tasks without predecessors get the
+        # lead bump; everything downstream follows automatically.
+        changed, tasks = [], []
+        for t in plan.tasks:
+            if not t.predecessors:
+                t = t.model_copy(update={"lead_days": max(0, t.lead_days + days)})
+                changed.append(t.id)
+            tasks.append(t)
+        # changed_ids: highlight the whole plan — every bar moves on screen.
+        all_ids = [t.id for t in tasks]
+        return _patch(Plan(tasks=tasks, project_start=plan.project_start), all_ids)
     changed, tasks = [], []
     for t in plan.tasks:
         if t.assignee == assignee:

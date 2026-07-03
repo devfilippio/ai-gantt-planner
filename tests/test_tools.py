@@ -197,3 +197,28 @@ def test_update_with_start_date_and_predecessors_keeps_requested_date():
                         start_date=later_target)
     sched = {s.id: s for s in compute_schedule(moved.plan)}
     assert sched[milk_id].start == later_target
+
+
+def test_shift_all_tasks_moves_whole_plan_by_exactly_n_days():
+    """Owner-reported: «передвинь все задачи на 3 дня вперед» had no tool path
+    (shift_tasks required an assignee) and the agent improvised inconsistently.
+    Now assignee is optional: without it the WHOLE plan shifts — every task's
+    start moves by exactly N days (dependents don't accumulate 2N/3N), and
+    durations stay untouched."""
+    from api.seed import seed_plan
+    from api.scheduler import compute_schedule
+
+    plan = seed_plan()
+    before = {s.id: s for s in compute_schedule(plan)}
+    durations_before = {t.id: t.duration_days for t in plan.tasks}
+
+    patch = shift_tasks(plan, days=3)
+
+    after = {s.id: s for s in compute_schedule(patch.plan)}
+    from datetime import date
+    for tid, b in before.items():
+        delta = (date.fromisoformat(after[tid].start) - date.fromisoformat(b.start)).days
+        assert delta == 3, f"{tid}: start moved by {delta}, expected exactly 3"
+    assert {t.id: t.duration_days for t in patch.plan.tasks} == durations_before
+    # every bar should light up on screen
+    assert set(patch.changed_ids) == {t.id for t in plan.tasks}

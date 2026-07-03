@@ -138,9 +138,10 @@ def reassign_tasks(from_assignee: str, to_assignee: str) -> str:
 
 
 @mcp.tool()
-def shift_tasks(assignee: str, days: int) -> str:
-    """Сдвигает начало задач указанного ответственного на N дней (длительность не меняется); отрицательное N — раньше."""
-    return _run("shift_tasks", assignee=assignee, days=days)
+def shift_tasks(days: int, assignee: str | None = None) -> str:
+    """Сдвигает начало задач на N дней (длительность не меняется); отрицательное N — раньше.
+    Без `assignee` сдвигается весь план."""
+    return _run("shift_tasks", days=days, assignee=assignee)
 
 
 # ASGI sub-application to mount at /api/mcp in the parent FastAPI app.
