@@ -1,28 +1,23 @@
 import { useEffect } from 'react';
 import { usePlanStore } from './store/planStore';
+import { GanttChart } from './components/GanttChart';
+import './App.css';
 
 function App() {
-  const plan = usePlanStore((state) => state.plan);
   const loadPlan = usePlanStore((state) => state.loadPlan);
 
   useEffect(() => {
     void loadPlan();
   }, [loadPlan]);
 
-  const tasks = plan?.tasks ?? [];
-
   return (
-    <main style={{ padding: 24 }}>
-      <h1 style={{ fontFamily: 'var(--font-mono)', fontSize: 14, letterSpacing: '0.08em', color: 'var(--text-dim)' }}>
-        ПЛАН ПРОЕКТА
-      </h1>
-      <div id="gantt-placeholder">
-        {tasks.map((task) => (
-          <div key={task.id} data-testid="task-bar" data-task-id={task.id}>
-            {task.name}
-          </div>
-        ))}
+    <main className="app-shell">
+      <div className="app-shell__chart">
+        <GanttChart onSelectTask={() => {}} />
       </div>
+      <aside className="app-shell__chat" aria-label="AI-агент">
+        <span className="app-shell__chat-label">AI-АГЕНТ</span>
+      </aside>
     </main>
   );
 }

@@ -1,0 +1,41 @@
+.app-shell {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 20px;
+  align-items: start;
+  min-height: 100svh;
+  padding: 28px;
+  box-sizing: border-box;
+}
+
+.app-shell__chart {
+  min-width: 0;
+}
+
+.app-shell__chat {
+  position: sticky;
+  top: 28px;
+  min-height: 480px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-1);
+  padding: 14px 18px;
+}
+
+.app-shell__chat-label {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+}
+
+@media (max-width: 860px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .app-shell__chat {
+    position: static;
+    min-height: 160px;
+  }
+}
