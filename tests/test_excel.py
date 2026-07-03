@@ -47,3 +47,50 @@ def test_import_unknown_predecessor_reports_row():
         import_plan(buf.getvalue())
     assert "3" in str(exc.value)  # row number
     assert "Ghost" in str(exc.value)
+
+
+def test_import_rejects_dependency_cycle_before_save():
+    """A reviewer uploading a cyclic plan must get a clean 400-style error —
+    previously the cyclic plan was saved and every subsequent schedule
+    computation (the whole app) crashed with 500 until a manual reset."""
+    from openpyxl import Workbook
+    import io as _io
+    wb = Workbook(); ws = wb.active
+    ws.append(HEADERS)
+    ws.append(["A", "", "X", 2, "B"])
+    ws.append(["B", "", "Y", 3, "A"])
+    buf = _io.BytesIO(); wb.save(buf)
+    with pytest.raises(ExcelImportError) as exc:
+        import_plan(buf.getvalue())
+    assert "цикл" in str(exc.value).lower()
+
+
+def test_import_rejects_self_reference():
+    from openpyxl import Workbook
+    import io as _io
+    wb = Workbook(); ws = wb.active
+    ws.append(HEADERS)
+    ws.append(["A", "", "X", 2, "A"])
+    buf = _io.BytesIO(); wb.save(buf)
+    with pytest.raises(ExcelImportError) as exc:
+        import_plan(buf.getvalue())
+    assert "себя" in str(exc.value)
+
+
+def test_import_tolerates_missing_columns():
+    """Sheets with fewer than 5 columns must produce a row-level error, not an
+    IndexError/500."""
+    from openpyxl import Workbook
+    import io as _io
+    wb = Workbook(); ws = wb.active
+    ws.append(["задача", "описание", "исполнитель"])
+    ws.append(["A", "", ""])
+    buf = _io.BytesIO(); wb.save(buf)
+    with pytest.raises(ExcelImportError) as exc:
+        import_plan(buf.getvalue())
+    assert "строка 2" in str(exc.value)
+
+
+def test_import_garbage_zip_gives_clean_error():
+    with pytest.raises(ExcelImportError):
+        import_plan(b"PK\x03\x04 this is not a real xlsx")

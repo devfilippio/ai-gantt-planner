@@ -134,6 +134,10 @@ async def import_plan_route(file: UploadFile) -> dict:
         plan = import_plan(data)
     except (ImportError_, ToolError) as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        # A malformed workbook must degrade to a clean 400, never a 500 —
+        # and never reach store.save_plan with a half-parsed plan.
+        raise HTTPException(status_code=400, detail="Не удалось разобрать файл — проверьте формат")
     store.save_plan(plan)
     return _plan_and_schedule()
 
