@@ -5,6 +5,7 @@ test('app loads seeded gantt', async ({ page }) => {
   await expect(page.getByText('ПЛАН ПРОЕКТА')).toBeVisible();
   // at least 7 task rows rendered
   const bars = page.locator('[data-testid="task-bar"]');
-  await expect(bars).toHaveCount(await bars.count());
-  expect(await bars.count()).toBeGreaterThanOrEqual(7);
+  await expect(async () => {
+    expect(await bars.count()).toBeGreaterThanOrEqual(7);
+  }).toPass();
 });
