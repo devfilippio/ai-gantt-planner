@@ -148,3 +148,44 @@ def test_update_task_lead_days_direct():
     assert updated.lead_days == 4
     sched = {s.id: s for s in compute_schedule(patch.plan)}
     assert sched["a"].start == "2026-05-09"
+
+
+def test_set_dependencies_resets_stale_lead_days():
+    """Owner-reported bug: a task pinned to a calendar date (lead_days from
+    project start) silently kept that offset after being linked to a
+    predecessor, drifting to 'pred end + old offset'. Linking must reschedule
+    purely by the dependency: start right after the predecessor ends."""
+    from api.seed import seed_plan
+    from api.scheduler import compute_schedule
+
+    plan = seed_plan()
+    # "Купить молоко" с 11 мая (project_start 2026-05-05 → lead 6)
+    patch = add_task(plan, name="Купить молоко", description="", assignee="Мария",
+                     duration_days=7, predecessors=[], start_date="2026-05-11")
+    milk_id = patch.changed_ids[0]
+    sched = {s.id: s for s in compute_schedule(patch.plan)}
+    assert sched[milk_id].start == "2026-05-11"
+
+    # «свяжи с дизайном» — без новой даты
+    linked = set_dependencies(patch.plan, id=milk_id, predecessors=["design"])
+    sched2 = {s.id: s for s in compute_schedule(linked.plan)}
+    design_end = sched2["design"].end
+    assert sched2[milk_id].start == design_end, (
+        f"linked task must start right after its predecessor ({design_end}), "
+        f"got {sched2[milk_id].start}"
+    )
+
+
+def test_update_with_start_date_and_predecessors_keeps_requested_date():
+    """Counter-case: when the user DOES state a date while linking, honour it."""
+    from api.seed import seed_plan
+    from api.scheduler import compute_schedule
+
+    plan = seed_plan()
+    patch = add_task(plan, name="Купить молоко", description="", assignee="Мария",
+                     duration_days=7, predecessors=[], start_date="2026-05-11")
+    milk_id = patch.changed_ids[0]
+    moved = update_task(patch.plan, id=milk_id, predecessors=["design"],
+                        start_date="2026-05-20")
+    sched = {s.id: s for s in compute_schedule(moved.plan)}
+    assert sched[milk_id].start == "2026-05-20"

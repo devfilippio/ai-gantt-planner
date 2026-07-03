@@ -96,6 +96,14 @@ def update_task(plan: Plan, *, id: str, start_date: str | None = None, **fields)
                 update["lead_days"] = _lead_days_for_start_date(
                     plan, predecessors=predecessors, start_date=start_date, exclude_id=id,
                 )
+            elif "predecessors" in update and "lead_days" not in update:
+                # Re-linking a task changes its scheduling baseline, so a
+                # lead_days computed against the OLD baseline is stale — e.g.
+                # a task pinned to May 11 via "+6 days from project start"
+                # must not silently become "pred end + 6 days" after linking.
+                # "Свяжи A с B" means pure dependency scheduling: start right
+                # after the predecessor unless a new date is stated.
+                update["lead_days"] = 0
             t = t.model_copy(update=update)
         tasks.append(t)
     if not found:
