@@ -24,20 +24,27 @@ export default defineConfig({
 
   projects: [
     {
+      // Demo screencasts (e2e/demo.spec.ts, e2e/demo-scenarios.spec.ts) are
+      // scripted for human-watchable pacing (multi-second waitForTimeout
+      // beats), not correctness — excluded here so they don't bloat normal
+      // CI/local runs. They only run under the `demo-recording` project below.
       name: 'desktop',
+      testIgnore: /demo.*\.spec\.ts/,
       use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } },
     },
     {
       name: 'mobile',
+      testIgnore: /demo.*\.spec\.ts/,
       use: { ...devices['Desktop Chrome'], viewport: { width: 390, height: 844 } },
     },
     {
-      // Dedicated project for recording the demo scenario (see e2e/demo.spec.ts).
-      // Only this project records video — desktop/mobile stay fast and
-      // artifact-free for normal CI/local runs. Run with:
+      // Dedicated project for recording the demo scenarios (see
+      // e2e/demo.spec.ts and e2e/demo-scenarios.spec.ts). Only this project
+      // records video — desktop/mobile stay fast and artifact-free for
+      // normal CI/local runs. Run with:
       //   npx playwright test demo --project=demo-recording
       name: 'demo-recording',
-      testMatch: /demo\.spec\.ts/,
+      testMatch: /demo.*\.spec\.ts/,
       use: {
         ...devices['Desktop Chrome'],
         viewport: { width: 1440, height: 900 },
