@@ -15,6 +15,7 @@ Each MCP tool below:
 from __future__ import annotations
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 from api.store import get_store
 from api.tool_registry import dispatch
@@ -26,10 +27,17 @@ from api.tools import ToolError
 # streamable_http_path="/" so that mounting this app at /api/mcp in the
 # parent FastAPI app exposes the MCP endpoint at exactly /api/mcp (instead
 # of the SDK's default /api/mcp/mcp).
+# The MCP transport runs behind Vercel's edge (which already validates the
+# real Host), so the SDK's built-in DNS-rebinding Host/Origin check would
+# otherwise reject the rewritten internal request with 421 "Invalid Host
+# header". Disable it for this serverless, stateless deployment.
 mcp = FastMCP(
     "ai-gantt-planner",
     stateless_http=True,
     streamable_http_path="/",
+    transport_security=TransportSecuritySettings(
+        enable_dns_rebinding_protection=False,
+    ),
 )
 
 
