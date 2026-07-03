@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { usePlanStore } from '../store/planStore';
-import { TODAY_OFFSET_DAYS, daysBetween, formatRuDateLong } from '../gantt/geometry';
+import { daysBetween, formatRuDateLong, todayISO } from '../gantt/geometry';
 import { summarizeToolCall } from '../lib/toolSummary';
 import type { Scheduled } from '../types';
 import './TaskModal.css';
@@ -111,8 +111,10 @@ export function TaskModal({ taskId, onClose, onSelectTask }: TaskModalProps) {
       })
       .filter((b): b is { id: string; x0: number; x1: number } => Boolean(b));
 
-    const todayFrac = TODAY_OFFSET_DAYS / totalSpan;
-    return { bars, todayFrac };
+    const todayOffsetDays = daysBetween(projectStart, todayISO());
+    const todayFrac = todayOffsetDays / totalSpan;
+    const isTodayVisible = todayFrac >= 0 && todayFrac <= 1;
+    return { bars, todayFrac, isTodayVisible };
   }, [plan, schedule]);
 
   useEffect(() => {
@@ -180,13 +182,15 @@ export function TaskModal({ taskId, onClose, onSelectTask }: TaskModalProps) {
                 />
               );
             })}
-            <line
-              className="task-modal__mini-today"
-              x1={`${clampFraction(miniTimeline.todayFrac) * 100}%`}
-              x2={`${clampFraction(miniTimeline.todayFrac) * 100}%`}
-              y1={0}
-              y2={MINI_TIMELINE_HEIGHT}
-            />
+            {miniTimeline.isTodayVisible && (
+              <line
+                className="task-modal__mini-today"
+                x1={`${miniTimeline.todayFrac * 100}%`}
+                x2={`${miniTimeline.todayFrac * 100}%`}
+                y1={0}
+                y2={MINI_TIMELINE_HEIGHT}
+              />
+            )}
           </svg>
         )}
 
@@ -306,12 +310,4 @@ export function TaskModal({ taskId, onClose, onSelectTask }: TaskModalProps) {
     </div>,
     document.body,
   );
-}
-
-/** Clamp a fractional position to [0, 1] — kept as a named function (rather
- * than inlining the expression twice) so the two `x1`/`x2` reads above stay
- * obviously in sync, and so an out-of-range "today" (project overrun) still
- * renders pinned to an edge instead of off the visible strip. */
-function clampFraction(frac: number): number {
-  return Math.min(Math.max(frac, 0), 1);
 }

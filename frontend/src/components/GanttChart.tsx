@@ -2,12 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { usePlanStore } from '../store/planStore';
 import {
-  TODAY_OFFSET_DAYS,
   dayTicks,
   daysBetween,
   dependencyPath,
   monthSpans,
   taskBar,
+  todayISO,
   weekTicks,
 } from '../gantt/geometry';
 import type { Bar } from '../gantt/geometry';
@@ -98,7 +98,17 @@ export function GanttChart({ onSelectTask }: GanttChartProps) {
     [projectStart, totalDays, dayWidth],
   );
 
-  const todayX = TODAY_OFFSET_DAYS * dayWidth;
+  // Real wall-clock "today", positioned relative to the plan's project
+  // start. Only rendered when it actually falls within the visible chart
+  // span — a plan entirely in the past or future simply omits the line
+  // rather than drawing it off-chart.
+  const todayOffsetDays = daysBetween(projectStart, todayISO());
+  const todayX = todayOffsetDays * dayWidth;
+  const isTodayVisible = todayOffsetDays >= 0 && todayOffsetDays <= totalDays;
+  // "СЕГОДНЯ" at ~9-10px mono runs roughly 60px wide; flip the label to the
+  // pin's left when it would otherwise overflow the chart's right edge.
+  const TODAY_LABEL_WIDTH = 60;
+  const todayLabelFlipped = todayX + 8 + TODAY_LABEL_WIDTH > chartWidth;
 
   // Bring "today" into view on first load — the most relevant moment in the
   // plan shouldn't require a manual scroll to discover. Runs once per mount
@@ -301,9 +311,24 @@ export function GanttChart({ onSelectTask }: GanttChartProps) {
                 />
               ))}
 
-          {/* Today line */}
-          {todayX <= chartWidth && (
+          {/* Today line — the label itself lives in the header band (drawn
+              later, below) right next to the pin dot, never over the bars.
+              The dashed <line> below is exactly 0px wide by construction
+              (x1 === x2), which gives the whole <g> a zero-width bounding
+              box — some visibility checks (incl. Playwright's) treat a
+              zero-area element as hidden even though it's plainly painted.
+              The 2px-wide invisible <rect> gives the group real geometry
+              without changing what's on screen. */}
+          {isTodayVisible && (
             <g data-testid="today-line">
+              <rect
+                x={todayX - 1}
+                y={HEADER_H}
+                width={2}
+                height={Math.max(chartHeight, ROW_HEIGHT + HEADER_H) - HEADER_H}
+                fill="transparent"
+                aria-hidden="true"
+              />
               <line
                 className="gantt__today-line"
                 x1={todayX}
@@ -311,13 +336,6 @@ export function GanttChart({ onSelectTask }: GanttChartProps) {
                 y1={HEADER_H}
                 y2={Math.max(chartHeight, ROW_HEIGHT + HEADER_H)}
               />
-              <text
-                className="gantt__today-label"
-                x={todayX + 5}
-                y={Math.max(chartHeight, ROW_HEIGHT + HEADER_H) - 6}
-              >
-                СЕГОДНЯ
-              </text>
             </g>
           )}
 
@@ -458,8 +476,18 @@ export function GanttChart({ onSelectTask }: GanttChartProps) {
                     </text>
                   </g>
                 ))}
-            {todayX <= chartWidth && (
-              <circle className="gantt__today-pin" cx={todayX} cy={HEADER_SPLIT / 2} r={3} />
+            {isTodayVisible && (
+              <g data-testid="today-label-group">
+                <circle className="gantt__today-pin" cx={todayX} cy={HEADER_SPLIT / 2} r={3} />
+                <text
+                  className="gantt__today-label"
+                  x={todayX + (todayLabelFlipped ? -8 : 8)}
+                  y={HEADER_SPLIT / 2 + 1}
+                  textAnchor={todayLabelFlipped ? 'end' : 'start'}
+                >
+                  СЕГОДНЯ
+                </text>
+              </g>
             )}
           </g>
         </svg>

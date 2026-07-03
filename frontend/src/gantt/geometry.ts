@@ -11,15 +11,20 @@ import type { Scheduled } from '../types';
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 /**
- * Fixed "today" reference for the demo: project_start + 12 calendar days.
- * The seed plan's `project_start` (2026-05-05) is itself a fixed constant,
- * so anchoring "today" to it (rather than the real wall-clock date) keeps
- * the chart's most interesting moment — mid-build, roughly halfway through
- * the 7-task "Запуск лендинга" plan — reproducible across every screenshot,
- * demo, and Playwright run. Shared between GanttChart (today line) and
- * TaskModal (mini timeline's today marker) so both surfaces agree.
+ * The real, local wall-clock "today" as an ISO "YYYY-MM-DD" date string.
+ * Built from getFullYear/getMonth/getDate (never `toISOString`, which is
+ * UTC and can read as the wrong day near midnight in timezones ahead of
+ * UTC) so it always matches the date the user actually sees on their
+ * machine. Shared between GanttChart (today line) and TaskModal (mini
+ * timeline's today marker) so both surfaces agree.
  */
-export const TODAY_OFFSET_DAYS = 12;
+export function todayISO(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
 
 const RU_MONTHS = [
   'ЯНВ',

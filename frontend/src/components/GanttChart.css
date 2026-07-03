@@ -180,9 +180,11 @@
 
 .gantt__today-label {
   font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.04em;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
   fill: var(--today);
+  dominant-baseline: middle;
 }
 
 .gantt__today-pin {
