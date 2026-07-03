@@ -132,7 +132,7 @@ The server is **stateless** by design (`stateless_http=True`) — no session aff
 
 ## Testing
 
-**Unit tests (pytest, 32 tests)** — models, scheduler (date computation, cycle detection, critical path), Excel import/export round-trip with row-level error messages, seed data, tools, tool registry, store (memory), REST endpoints, the agent loop (with a fake LLM), the SSE chat endpoint, undo, and the MCP tool dispatch:
+**Unit tests (pytest, 55 tests)** — models, scheduler (date computation, cycle detection, critical path), Excel import/export round-trip with row-level error messages, seed data, tools, tool registry, store (memory), REST endpoints, the agent loop (with a fake LLM), the SSE chat endpoint, undo, and the MCP tool dispatch:
 
 ```bash
 ENV=test MOCK_LLM=1 .venv/Scripts/python -m pytest -q
