@@ -72,9 +72,9 @@ vercel.json
 
 ## Процесс и статус
 
-Процесс: brainstorming ✅ → дизайн утверждён ✅ (вариант A, Vercel, Neon, SSE, MCP) → **спека** ✅ (`docs/superpowers/specs/`) → writing-plans ✅ → TDD-имплементация ✅ → code-review ✅ → README/Roadmap ✅ → демо ✅ → деплой ⏳.
+Процесс: brainstorming ✅ → дизайн утверждён ✅ (вариант A, Vercel, Neon, SSE, MCP) → **спека** ✅ (`docs/superpowers/specs/`) → writing-plans ✅ → TDD-имплементация ✅ → code-review ✅ → README/Roadmap ✅ → демо ✅ → деплой ✅.
 
-Статус на 2026-07-03: приложение построено и протестировано — backend (32 pytest, зелёные) + frontend (`npm run build` чистый) + E2E (12 Playwright-спеков на desktop, включая `golden-path` и записанный `demo`) все зелёные. README.md и `docs/roadmap-to-production.md` написаны. `docs/demo.gif` записан и закоммичен. Осталось только: деплой на Vercel + провижининг Neon — ждём кредов от владельца (см. Task 9.2 в плане), после чего проверить `/api/health`, `/api/plan`, chat-стриминг, export на проде и вписать live-URL в README.
+Статус на 2026-07-03: **задеплоено и проверено на проде.** Live: https://ai-gantt-planner-psi.vercel.app. Backend (32 pytest) + frontend (`npm run build`) + E2E (12 Playwright-спеков на desktop, включая `golden-path` и `demo`) — все зелёные. На проде проверены сквозным прогоном: SPA, `/api/health`, `/api/plan`, экспорт Excel, чат с живой моделью OpenRouter (SSE), MCP-handshake (`/api/mcp/`). Ключ OpenRouter — в Vercel env (Production/Preview/Development). Деплой на MemoryStore (без Neon) — план сбрасывается на cold start; провижининг Neon + `psycopg` под Python 3.13 вынесены в Roadmap. Осталось опционально: git-remote на GitHub для deliverable «ссылка на репозиторий».
 
 ## Правила
 

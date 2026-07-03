@@ -2,7 +2,7 @@
 
 An AI-native project planning tool: a live, interactive Gantt chart that you edit in bulk by talking to it — "move Oleg's tasks a week later," "reassign Maria's work to Petr" — and the bars animate on screen as the agent applies the change. Import/export Excel, undo any agent edit, and the same mutation layer is exposed over MCP so any MCP-compatible client (Claude Desktop, Cursor, etc.) can drive the plan too.
 
-<!-- LIVE URL: to be filled after deploy -->
+**Live:** https://ai-gantt-planner-psi.vercel.app
 
 ![Demo: import Excel, edit via chat, export](docs/demo.gif)
 
@@ -120,7 +120,7 @@ Against the deployed app (Claude Desktop, `claude_desktop_config.json`, or any M
 {
   "mcpServers": {
     "ai-gantt-planner": {
-      "url": "https://<your-deployed-domain>/api/mcp/"
+      "url": "https://ai-gantt-planner-psi.vercel.app/api/mcp/"
     }
   }
 }
