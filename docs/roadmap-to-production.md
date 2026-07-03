@@ -1,49 +1,58 @@
-# Roadmap to production
+# Дорога до продакшена
 
-This project is a test-task/demo build: fully tested (49 backend unit tests, 14 Playwright E2E specs across desktop + a recorded demo project), but deliberately scoped down in places to fit the appetite. This document is the honest account of what's cut, why, and what order to close the gaps in before this could carry real users or real money.
+Это тестовое/демо-приложение: полностью покрыто тестами (60 юнит-тестов бэкенда, 13 desktop + 12 mobile Playwright-спеков плюс отдельный проект с 4 записываемыми demo-сценариями), но местами намеренно урезано под аппетит задачи. Здесь — честный разбор того, что срезано, почему, и в каком порядке это закрывать, прежде чем приложение сможет нести реальных пользователей и реальные деньги.
 
-## Intentional tech debt (cut on purpose, with a known cost)
+## Сознательные срезы (урезали намеренно, цену знаем)
 
-1. **FIXED — `shift_tasks` now performs a true shift.** `Task` gained a `lead_days` field (extra calendar days to wait before a task can start, applied after the later of predecessors'-end / project-start — see `api/models.py`, `api/scheduler.py::compute_schedule`). `shift_tasks` (`api/tools.py`) now adjusts `lead_days` instead of `duration_days`, so "move Oleg's tasks a week later" pushes the start (and therefore the end) date without lengthening the task — effort is preserved. Negative `days` moves tasks earlier, clamped at `lead_days >= 0`. `add_task`/`update_task` also accept an explicit `start_date` (YYYY-MM-DD), which resolves to the equivalent `lead_days` against the task's natural start (max of predecessors' ends, or project start) — this is also what unblocked giving an independent task (no predecessors) a specific calendar start date, which was previously impossible since dates were always `project_start` for a root task.
-2. **Single global plan, no multi-user, no auth.** There is exactly one plan in the store (`_SINGLETON_ID = 1` in `api/store.py`), shared by every visitor. There's no concept of a project, a user, or an ownership boundary. Fine for a single-reviewer demo; not fine the moment two people open the app at once.
-3. **MCP endpoint (`/api/mcp`) is unauthenticated.** Anyone who can reach the deployed URL can mutate the plan via MCP with no credential at all. Needs a bearer token (or mTLS/IP allowlist for an internal tool) checked before `dispatch()` runs.
-4. **Agent guardrails are prompt-level only.** `api/agent.py`'s `SYSTEM_PROMPT` tells the model not to invent task ids, to ask when ambiguous, and to explain rejected mutations — but nothing enforces this outside the model's own compliance. A jailbroken or confused model could still emit an `arguments` payload that passes `dispatch`'s schema check but is semantically wrong (e.g., a wildly large `duration_days`). There is no server-side allowlist of "safe" argument ranges, no rate limiting on tool calls per turn beyond `MAX_TURNS = 6`, and no output-side check that the natural-language `message` event matches what actually happened.
-5. **No CI pipeline wired up.** Both suites (pytest, Playwright) exist and pass locally; nothing runs them automatically on push/PR yet. See the sample workflow below.
-6. **Drag-move is not implemented — only resize.** Task 7.3 of the plan called out drag/resize; `frontend/src/components/GanttChart.tsx` + `e2e/drag.spec.ts` cover dragging the right edge to change duration, but dragging the whole bar to change its start date (independent of predecessors) is not implemented. The backend now has the `lead_days` field needed to support this (see item 1) — dragging a whole bar just needs to be wired to a `PATCH .../task/{id}` call setting `start_date`/`lead_days` instead of `duration_days`; not done yet.
-7. **`PostgresStore` undo semantics are only manually tested.** `tests/test_store.py` only exercises `MemoryStore`. `PostgresStore`'s snapshot/undo (`api/store.py`) uses the same logic shape but has never run against a real Neon instance in an automated test — first real traffic against Postgres is effectively the first test of that code path.
-8. **Mobile drag is skipped.** The Playwright config has a `mobile` project (390×844) and `smoke`/`gantt`/`chat`/`excel`/`modal` all run there, but `drag.spec.ts` and the pointer-based resize interaction were built and verified for desktop pointer events only; touch-drag on the Gantt bars is unverified.
-9. **Observability, rate limiting, and error tracking are entirely absent.** No Sentry/equivalent, no request logging beyond FastAPI's defaults, no rate limit on `/api/chat` (each call may invoke a real paid LLM), no metrics on tool-call success/failure rates or agent turn counts.
-10. **Excel import/export does not carry `lead_days`.** The required 5-column format (задача, описание, исполнитель, длительность, предшественники) is unchanged by design — a task's `lead_days` (custom start date / true shift) is not written on export and not read on import, so round-tripping through Excel silently resets any lead time to 0.
+1. **Один глобальный план, без мультипользовательности, без auth.** В хранилище ровно один план (`_SINGLETON_ID = 1` в `api/store.py`), общий на всех посетителей. Нет ни проекта, ни пользователя, ни границы владения. Для демо на одного проверяющего — норма; ломается в момент, когда двое открывают приложение одновременно.
+2. **MCP-эндпоинт (`/api/mcp`) без аутентификации.** Кто дотянулся до задеплоенного URL — тот меняет план по MCP вообще без учётки. Нужен bearer-токен (или mTLS / IP-allowlist для внутреннего инструмента), проверяемый до вызова `dispatch()`.
+3. **Guardrails агента живут только в промпте.** `SYSTEM_PROMPT` в `api/agent.py` велит модели не выдумывать id задач, переспрашивать при неоднозначности и объяснять отклонённые правки — но снаружи это ничем не подкреплено, держится на послушании самой модели. Джейлбрейкнутая или сбитая с толку модель всё ещё может отдать `arguments`, которые пройдут schema-check в `dispatch`, но семантически неверны (например, дикое `duration_days`). Нет серверного allowlist «безопасных» диапазонов аргументов, нет ограничения частоты tool-call'ов сверх `MAX_TURNS = 8` на один ход, нет проверки на выходе, что текст события `message` соответствует тому, что реально произошло.
+4. **CI-пайплайна нет.** Оба набора (pytest, Playwright) есть и проходят локально, но ничего не гоняет их автоматически на push/PR. Ниже — черновик workflow.
+5. **Drag-move не реализован — только resize.** `frontend/src/components/GanttChart.tsx` даёт потянуть правый край бара, чтобы поменять длительность (`handleResizeStart` → `resizeTask` → `duration_days`), это же проверяет `e2e/drag.spec.ts`. А вот перетаскивание бара целиком, чтобы сдвинуть дату старта независимо от предшественников, не сделано. На бэкенде поле `lead_days` для этого уже есть (см. ниже) — тащить весь бар остаётся привязать к вызову `PATCH .../task/{id}` с `start_date`/`lead_days` вместо `duration_days`; пока не сделано.
+6. **Undo у `PostgresStore` проверяется только руками.** `tests/test_store.py` гоняет исключительно `MemoryStore` (там 2 теста). Снапшоты и undo `PostgresStore` (`api/store.py`) устроены по той же логике, но ни разу не прогонялись против настоящего Neon в автотесте — первый реальный трафик по Postgres по сути и станет первым тестом этого код-пути.
+7. **Мобильный drag пропущен.** В конфиге Playwright есть проект `mobile` (390×844), и `smoke`/`gantt`/`chat`/`excel`/`modal` на нём гоняются, но `drag.spec.ts` помечен `test.skip` для узких вьюпортов: pointer-resize собирался и проверялся только под десктопные события мыши. Touch-drag по барам Гантта не проверен.
+8. **Наблюдаемости, рейт-лимитов и трекинга ошибок нет вообще.** Ни Sentry, ни аналога, ни логирования запросов сверх дефолтов FastAPI, ни лимита на `/api/chat` (каждый вызов может дёрнуть настоящую платную LLM), ни метрик по успешности tool-call'ов или числу ходов агента.
+9. **Excel-импорт/экспорт не переносит `lead_days`.** Формат из ТЗ — 5 колонок (задача, описание, исполнитель, длительность, предшественники) — оставлен как есть намеренно. Поле `lead_days` задачи (кастомная дата старта / истинный сдвиг) при экспорте не пишется и при импорте не читается, так что круговой рейс через Excel молча обнуляет любой lead time до 0.
 
-## What's still missing before "real" production
+### Долг, который уже закрыли
 
-- **Cold-start latency of the MCP session manager on serverless.** `api/index.py`'s `lifespan` starts `mcp.session_manager.run()` for the whole app on every cold start, before any request (including unrelated ones like `/api/health`) can be served. On Vercel's Python runtime this adds to the cold-start tax for *every* route, not just MCP ones. Needs measurement against real Vercel cold starts and, if material, either lazy-starting the session manager only when `/api/mcp` is actually hit, or moving MCP to its own deployment/function so it doesn't tax the SPA-serving path.
-- **No environment separation.** One Neon database, one Vercel project — no staging vs. production distinction, so there's no safe place to test a risky migration or a new agent prompt against real-shaped data before it's live.
-- **No data retention / backup policy** for Neon plan/snapshot tables — `plan_snapshots` grows unboundedly (every mutating turn adds a row, `undo` only pops one) with no pruning job.
-- **No structured logging of agent decisions** — for a support/debugging scenario ("why did the agent do X"), there's currently only the SSE event stream in the browser session; nothing is persisted server-side per turn (which tool was called, with what args, whether it errored).
+- **`shift_tasks` теперь делает настоящий сдвиг** (раньше был долг — двигал `duration_days` вместо старта, растягивая задачу). У `Task` появилось поле `lead_days` — сколько календарных дней подождать перед стартом, применяется поверх более позднего из «конец предшественников» / «старт проекта» (см. `api/models.py`, `api/scheduler.py::compute_schedule`). `shift_tasks` (`api/tools.py`) правит `lead_days`, а не `duration_days`, поэтому «перенеси задачи Олега на неделю позже» двигает старт (и конец) без удлинения задачи — трудозатраты сохраняются. Отрицательные `days` двигают раньше, с ограничением `lead_days >= 0`. Заодно `add_task`/`update_task` принимают явный `start_date` (YYYY-MM-DD), который пересчитывается в эквивалентный `lead_days` относительно естественного старта задачи (max концов предшественников или старт проекта). Это же разблокировало возможность дать независимой задаче (без предшественников) конкретную дату старта — раньше корневая задача всегда стартовала от `project_start`.
+- **Диалоговая память у агента.** Раньше каждый `POST /api/chat` был stateless и видел только последнее сообщение — агент забывал собственные вопросы и переспрашивал то, на что пользователь уже ответил. Теперь прошлые реплики (`history`, до `HISTORY_CAP = 20` последних) сворачиваются в сообщения LLM перед новым запросом (`api/agent.py::_history_messages`).
+- **Инструмент `undo_last_turn`.** По фразе «отмени» / «откати правку» агент откатывает план к состоянию до последней мутации через снапшот-стек хранилища. В цикле агента это ветка с `undo_callback`, привязанным в chat-роуте к `store.undo()`.
+- **Закалённый Excel-импорт.** Циклы, самоссылки и битые файлы больше не роняют запрос — превращаются в чистый 400 с сообщением по номеру строки; это проверяет `test_excel.py` и `e2e/excel.spec.ts`.
+- **Хаос-тестирование агента.** `scripts/chaos_chat.py` гоняет батарею произвольных и намеренно вредных команд («сделай план красивее», «удали все задачи», «какая погода в Москве?», гибрид, галиматья) через настоящий цикл агента с `OpenRouterLLM` против свежего сид-плана — ловим выдуманные правки, тихие no-op'ы и зацикливания на реальной модели, не трогая прод.
 
-## Risks
+## Чего ещё не хватает до «настоящего» продакшена
 
-| Risk | Likelihood | Impact | Notes |
+- **Cold-start MCP session manager на serverless.** `lifespan` в `api/index.py` поднимает `mcp.session_manager.run()` для всего приложения на каждом cold start, до любого запроса — включая не относящиеся к MCP, вроде `/api/health`. На Python-рантайме Vercel это добавляется к cold-start-налогу для *каждого* роута, не только MCP-шных. Нужно померить против реальных cold start'ов Vercel и, если существенно, либо поднимать session manager лениво — только когда реально бьют в `/api/mcp`, — либо вынести MCP в отдельный деплой/функцию, чтобы он не облагал путь отдачи SPA.
+- **Cold-start сбрасывает план на in-memory.** Без `DATABASE_URL` приложение работает на `MemoryStore`, а serverless-инстанс живёт недолго — при следующем cold start план возвращается к сиду. Для демо годится, для продакшена нужен провижининг Neon (`DATABASE_URL` в env) и `psycopg` под целевой Python.
+- **Нет разделения окружений.** Одна база Neon, один проект Vercel — нет staging против production, а значит негде безопасно обкатать рискованную миграцию или новый промпт агента на данных нужной формы, прежде чем это уедет в прод.
+- **Нет политики хранения / бэкапа** таблиц плана и снапшотов Neon — `plan_snapshots` растёт неограниченно (каждый меняющий ход добавляет строку, `undo` снимает только одну), без задачи-пруна.
+- **Нет структурного логирования решений агента** — для сценария поддержки/отладки («почему агент сделал X») сейчас есть только поток SSE-событий в браузерной сессии; на сервере ничего не сохраняется по ходам (какой инструмент вызван, с какими аргументами, была ли ошибка).
+
+## Риски
+
+| Риск | Вероятность | Влияние | Комментарий |
 |---|---|---|---|
-| Two people editing the single global plan simultaneously silently clobber each other | High if ever multi-user | Medium | No optimistic concurrency check; last `save_plan` wins |
-| Unauthenticated MCP endpoint used to spam/mutate the plan | Medium (only if URL leaks) | Medium | No auth, no rate limit |
-| LLM cost runaway from unthrottled `/api/chat` | Medium in production traffic | Medium-High | No per-user/IP rate limit; `MAX_TURNS=6` caps a single turn but not call frequency |
-| Postgres undo path breaks in a way unit tests can't catch (only manually verified) | Low-Medium | Medium | First real fix would come from a staging smoke test, not CI |
-| Excel round-trip silently drops `lead_days` (custom start dates reset to natural/0) | Medium if Excel becomes the primary editing path | Low-Medium | Documented above (item 10); would need a 6th optional column to fix |
+| Двое правят единственный глобальный план одновременно и молча затирают друг друга | Высокая, как только появится мультипользовательность | Среднее | Нет проверки оптимистичной конкурентности; побеждает последний `save_plan` |
+| Через неаутентифицированный MCP-эндпоинт спамят/меняют план | Средняя (только если утечёт URL) | Среднее | Нет auth, нет рейт-лимита |
+| Разгон стоимости LLM из-за неограниченного `/api/chat` | Средняя на боевом трафике | Средне-высокое | Нет лимита по пользователю/IP; `MAX_TURNS=8` ограничивает один ход, но не частоту вызовов |
+| Undo-путь Postgres ломается так, что юнит-тесты не поймают (проверен только руками) | Средне-низкая | Среднее | Первый реальный фикс придёт из staging-smoke, а не из CI |
+| Круговой рейс через Excel молча теряет `lead_days` (кастомные даты старта сбрасываются в 0) | Средняя, если Excel станет основным способом правки | Средне-низкое | Описано выше (п. 9); лечится 6-й опциональной колонкой |
 
-## Prioritized closing order
+## Порядок закрытия
 
-1. **Wire up CI** (sample workflow below) — cheapest fix, highest leverage; turns every subsequent item into something that can't silently regress.
-2. **Auth on `/api/mcp`** — a bearer token check is a small, isolated change and closes the most exploitable gap (unauthenticated write access).
-3. **Rate limiting + basic observability on `/api/chat`** — bounds the cost-runaway risk before any real traffic.
-4. **Multi-user / multi-plan support (auth + per-plan storage)** — the structural change everything else (concurrency, permissions, audit log) depends on; do this before scaling beyond a single reviewer.
-5. ~~Fix `shift_tasks` to real slack-insertion~~ — done (see item 1 above); kept here for history.
-6. **Output/input validation beyond prompt guardrails** — add a server-side sanity layer (argument range checks, a diff-based confirmation step for large mutations) once the product has enough real usage to know what "suspicious" looks like.
-7. **Automated test coverage for `PostgresStore`** — add once a real Neon staging database is part of the CI/dev loop (item 1 makes this natural to slot in).
-8. **Drag-move + mobile touch-drag** — polish items; do last because they're UX completeness, not correctness or safety.
+1. **Поднять CI** (черновик ниже) — самый дешёвый фикс с наибольшим рычагом; после него каждый следующий пункт уже не сможет молча отрегрессить.
+2. **Auth на `/api/mcp`** — проверка bearer-токена это маленькая изолированная правка, закрывающая самую эксплуатируемую дыру (неаутентифицированная запись).
+3. **Рейт-лимит и базовая наблюдаемость на `/api/chat`** — ограничивает риск разгона стоимости до появления реального трафика.
+4. **Мультипользовательность / мультиплан (auth + хранилище на план)** — структурное изменение, от которого зависит всё остальное (конкурентность, права, аудит-лог); делать до масштабирования сверх одного проверяющего.
+5. **Валидация входа/выхода сверх промпт-guardrails** — добавить серверный слой здравого смысла (проверки диапазонов аргументов, шаг подтверждения на diff для крупных мутаций), когда наберётся достаточно реального использования, чтобы понять, как выглядит «подозрительное».
+6. **Автотесты для `PostgresStore`** — добавить, когда настоящая staging-база Neon войдёт в CI/dev-цикл (п. 1 делает это естественным).
+7. **Drag-move + мобильный touch-drag** — полировка; делать в последнюю очередь, потому что это полнота UX, а не корректность или безопасность.
 
-## Sample CI workflow (not yet wired up)
+`shift_tasks` (истинный сдвиг через `lead_days`) в этом списке нет намеренно — долг уже закрыт (см. «Долг, который уже закрыли»).
+
+## Черновик CI-workflow (ещё не подключён)
 
 ```yaml
 # .github/workflows/ci.yml
