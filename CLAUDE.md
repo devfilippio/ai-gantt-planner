@@ -80,5 +80,6 @@ vercel.json
 
 - Общение и документы — на русском; код и коммиты — на английском; README и docs — на русском (решение владельца от 2026-07-03).
 - Секреты только в env; `.env` в `.gitignore` с первого коммита.
+- Git-идентичность: коммиты ТОЛЬКО от `Filipp <284977096+devfilippio@users.noreply.github.com>` (настроено в локальном git config), БЕЗ трейлеров Co-Authored-By — репозиторий публичный, в Contributors должен быть только devfilippio.
 - Каждый этап проверяется локально (`uvicorn` + `vite dev`), потом Vercel preview, потом прод.
 - Windows: PowerShell-среда, поэтому в скриптах учитывать кодировку (PYTHONIOENCODING=utf-8 при выводе кириллицы из Python).
