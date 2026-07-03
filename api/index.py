@@ -15,7 +15,7 @@ from api.excel import ImportError_, export_plan, import_plan
 from api.mcp_server import mcp, mcp_app
 from api.scheduler import compute_schedule
 from api.store import get_store
-from api.tools import ToolError
+from api.tools import ToolError, update_task
 
 
 @asynccontextmanager
@@ -51,6 +51,18 @@ app.add_middleware(
 
 class ChatRequest(BaseModel):
     message: str
+
+
+class TaskUpdateRequest(BaseModel):
+    """Partial update for a single task, used by the Gantt chart's manual
+    drag/resize interaction. All fields optional — only provided fields are
+    applied (mirrors `update_task`'s **fields semantics)."""
+
+    duration_days: int | None = None
+    start: str | None = None
+    predecessors: list[str] | None = None
+    assignee: str | None = None
+
 
 XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
@@ -136,6 +148,32 @@ def undo_route() -> dict:
     store = get_store()
     store.undo()
     return _plan_and_schedule()
+
+
+@app.post("/api/plan/task/{task_id}")
+def update_task_route(task_id: str, body: TaskUpdateRequest) -> dict:
+    """Lightweight single-task update used by the Gantt chart's manual
+    drag/resize (Task 7.3). There is no persisted `start` on a Task — dates
+    are always computed by the scheduler from duration + predecessors — so
+    `start` is accepted for API forward-compatibility but has no effect;
+    resizing a bar's duration is what actually moves dates.
+    """
+    store = get_store()
+    plan = store.get_plan()
+    try:
+        patch = update_task(
+            plan,
+            id=task_id,
+            duration_days=body.duration_days,
+            predecessors=body.predecessors,
+            assignee=body.assignee,
+        )
+    except ToolError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    store.save_plan(patch.plan)
+    result = _plan_and_schedule()
+    result["changed_ids"] = patch.changed_ids
+    return result
 
 
 @app.post("/api/agent-test-mutation")
