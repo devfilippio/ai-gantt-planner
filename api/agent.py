@@ -318,7 +318,13 @@ class MockLLM:
 class OpenRouterLLM:
     """Wraps the OpenRouter-hosted chat completions API (OpenAI-compatible client),
     normalizing the response into the same shape MockLLM produces. Not covered by
-    unit tests (requires network + API key)."""
+    unit tests (requires network + API key).
+
+    Resilience is a cascade over (key, model) pairs: primary model on the
+    primary key, fallback model on the primary key, then the same two models
+    on the fallback key (env `OPENROUTER_API_KEY_FALLBACK`, optional). So a
+    key hitting its credit limit mid-demo degrades to the reserve key instead
+    of an error in the chat."""
 
     PRIMARY_MODEL = "anthropic/claude-sonnet-4.5"
     FALLBACK_MODEL = "openai/gpt-4o"
@@ -326,23 +332,36 @@ class OpenRouterLLM:
     def __init__(self) -> None:
         import openai
 
-        self._client = openai.OpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=os.environ["OPENROUTER_API_KEY"],
-        )
+        keys = [os.environ["OPENROUTER_API_KEY"]]
+        fallback_key = os.getenv("OPENROUTER_API_KEY_FALLBACK")
+        if fallback_key:
+            keys.append(fallback_key)
+        self._clients = [
+            openai.OpenAI(base_url="https://openrouter.ai/api/v1", api_key=k)
+            for k in keys
+        ]
 
-    def _complete(self, model: str, messages: list[dict], tools: list[dict]):
-        return self._client.chat.completions.create(
+    def _complete(self, client, model: str, messages: list[dict], tools: list[dict]):
+        return client.chat.completions.create(
             model=model,
             messages=messages,
             tools=tools,
         )
 
     def create(self, messages: list[dict], tools: list[dict]) -> dict:
-        try:
-            response = self._complete(self.PRIMARY_MODEL, messages, tools)
-        except Exception:
-            response = self._complete(self.FALLBACK_MODEL, messages, tools)
+        response = None
+        last_error: Exception | None = None
+        for client in self._clients:
+            for model in (self.PRIMARY_MODEL, self.FALLBACK_MODEL):
+                try:
+                    response = self._complete(client, model, messages, tools)
+                    break
+                except Exception as e:
+                    last_error = e
+            if response is not None:
+                break
+        if response is None:
+            raise last_error if last_error else RuntimeError("no OpenRouter response")
 
         choice = response.choices[0].message
         raw_tool_calls = getattr(choice, "tool_calls", None)

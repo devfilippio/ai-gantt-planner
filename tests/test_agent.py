@@ -227,3 +227,40 @@ def test_mock_llm_routes_undo_keywords_to_undo_last_turn():
     ))
     tool_calls = [e for e in events if e["type"] == "tool_call"]
     assert tool_calls and tool_calls[0]["tool"] == "undo_last_turn"
+
+
+def test_openrouter_cascades_to_fallback_key(monkeypatch):
+    """If the primary key dies mid-demo (credit limit), the client cascade
+    must silently move to the fallback key instead of erroring the chat."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-primary")
+    monkeypatch.setenv("OPENROUTER_API_KEY_FALLBACK", "sk-or-reserve")
+    from api.agent import OpenRouterLLM
+
+    llm = OpenRouterLLM()
+    assert len(llm._clients) == 2
+
+    calls = []
+
+    class _Msg:
+        content = "ок"
+        tool_calls = None
+
+    class _Choice:
+        message = _Msg()
+
+    class _Resp:
+        choices = [_Choice()]
+
+    def fake_complete(self, client, model, messages, tools):
+        calls.append((client.api_key, model))
+        if client.api_key == "sk-or-primary":
+            raise RuntimeError("402 credits exhausted")
+        return _Resp()
+
+    monkeypatch.setattr(OpenRouterLLM, "_complete", fake_complete)
+    result = llm.create([{"role": "user", "content": "привет"}], [])
+    assert result == {"content": "ок"}
+    # primary key tried with both models, then reserve key succeeded first try
+    assert calls[0] == ("sk-or-primary", OpenRouterLLM.PRIMARY_MODEL)
+    assert calls[1] == ("sk-or-primary", OpenRouterLLM.FALLBACK_MODEL)
+    assert calls[2] == ("sk-or-reserve", OpenRouterLLM.PRIMARY_MODEL)
