@@ -8,6 +8,8 @@ branches (`design`/`backend` off `research`; `frontend`/`content` off
 """
 from __future__ import annotations
 
+from datetime import date, timedelta
+
 from api.models import Plan, Task
 
 _ASSIGNEES = ["Мария", "Иван", "Олег", "Анна"]
@@ -72,4 +74,9 @@ def seed_plan() -> Plan:
             predecessors=["qa"],
         ),
     ]
-    return Plan(tasks=tasks, project_start="2026-05-05")
+    # Anchor the seed to the real wall-clock date rather than a fixed
+    # calendar date, so the demo always looks "mid-flight": today's date
+    # (see api/agent.py's compact_plan header and the frontend's todayISO())
+    # lands 12 days into the plan, matching this project's ~23-day span.
+    project_start = (date.today() - timedelta(days=12)).isoformat()
+    return Plan(tasks=tasks, project_start=project_start)

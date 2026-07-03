@@ -15,14 +15,18 @@ def test_dispatch_runs_a_tool():
 
 
 def test_dispatch_add_task_passes_through_start_date():
+    from datetime import date, timedelta
+
     plan = seed_plan()
+    ps = date.fromisoformat(plan.project_start)
+    target = (ps + timedelta(days=6)).isoformat()
     patch = dispatch(
         "add_task",
         {"name": "Купить молоко", "description": "", "assignee": "Мария",
-         "duration_days": 7, "predecessors": [], "start_date": "2026-05-11"},
+         "duration_days": 7, "predecessors": [], "start_date": target},
         plan,
     )
     new = next(t for t in patch.plan.tasks if t.name == "Купить молоко")
     from api.scheduler import compute_schedule
     sched = {s.id: s for s in compute_schedule(patch.plan)}
-    assert sched[new.id].start == "2026-05-11"
+    assert sched[new.id].start == target

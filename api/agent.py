@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import date, timedelta
+from datetime import date
 from typing import Any, Iterator, Protocol
 
 from api.models import Plan
@@ -12,11 +12,6 @@ from api.tools import ToolError
 
 MAX_TURNS = 8
 HISTORY_CAP = 20
-
-# How far into the project a demo "today" sits, purely so the model has a
-# concrete anchor for relative phrasing ("на следующей неделе" etc.) - not
-# tied to any real wall-clock date since the seed plan lives in 2026-05.
-DEMO_TODAY_OFFSET_DAYS = 12
 
 
 def compact_plan(plan: Plan) -> str:
@@ -34,11 +29,9 @@ def compact_plan(plan: Plan) -> str:
 
     try:
         schedule = {s.id: s for s in compute_schedule(plan)}
-        project_start = date.fromisoformat(plan.project_start)
-        today = project_start + timedelta(days=DEMO_TODAY_OFFSET_DAYS)
         header = (
             f"Старт проекта: {plan.project_start}. "
-            f"Сегодня по плану: {today.isoformat()}."
+            f"Сегодня: {date.today().isoformat()}."
         )
         lines = [header]
         for t in plan.tasks:

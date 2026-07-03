@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date
+
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -34,9 +36,13 @@ class Scheduled(BaseModel):
     is_critical: bool = False
 
 
+def _today_iso() -> str:
+    return date.today().isoformat()
+
+
 class Plan(BaseModel):
     tasks: list[Task] = Field(default_factory=list)
-    project_start: str = "2026-05-05"
+    project_start: str = Field(default_factory=_today_iso)
 
 
 class PlanPatch(BaseModel):

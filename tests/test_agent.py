@@ -139,11 +139,11 @@ def test_compact_plan_includes_computed_dates_and_header():
     user says things like 'с 11 по 18 мая' — not just duration in days."""
     plan = seed_plan()
     text = compact_plan(plan)
-    assert "Старт проекта: 2026-05-05." in text
-    assert "Сегодня по плану:" in text
+    assert f"Старт проекта: {plan.project_start}." in text
+    assert "Сегодня:" in text
     # per-task lines should show a start->end date range, not just duration.
     assert "research" in text
-    assert "2026-05-05" in text  # research starts at project_start
+    assert plan.project_start in text  # research starts at project_start
 
 
 def test_agent_mock_add_task_creates_task_with_resolved_predecessor():

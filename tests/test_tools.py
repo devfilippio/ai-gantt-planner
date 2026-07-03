@@ -155,16 +155,20 @@ def test_set_dependencies_resets_stale_lead_days():
     project start) silently kept that offset after being linked to a
     predecessor, drifting to 'pred end + old offset'. Linking must reschedule
     purely by the dependency: start right after the predecessor ends."""
+    from datetime import date, timedelta
     from api.seed import seed_plan
     from api.scheduler import compute_schedule
 
     plan = seed_plan()
-    # "Купить молоко" с 11 мая (project_start 2026-05-05 → lead 6)
+    # "Купить молоко" starting 6 days after project_start (the seed's
+    # dynamic project_start, not a fixed calendar date).
+    ps = date.fromisoformat(plan.project_start)
+    target = (ps + timedelta(days=6)).isoformat()
     patch = add_task(plan, name="Купить молоко", description="", assignee="Мария",
-                     duration_days=7, predecessors=[], start_date="2026-05-11")
+                     duration_days=7, predecessors=[], start_date=target)
     milk_id = patch.changed_ids[0]
     sched = {s.id: s for s in compute_schedule(patch.plan)}
-    assert sched[milk_id].start == "2026-05-11"
+    assert sched[milk_id].start == target
 
     # «свяжи с дизайном» — без новой даты
     linked = set_dependencies(patch.plan, id=milk_id, predecessors=["design"])
@@ -178,14 +182,18 @@ def test_set_dependencies_resets_stale_lead_days():
 
 def test_update_with_start_date_and_predecessors_keeps_requested_date():
     """Counter-case: when the user DOES state a date while linking, honour it."""
+    from datetime import date, timedelta
     from api.seed import seed_plan
     from api.scheduler import compute_schedule
 
     plan = seed_plan()
+    ps = date.fromisoformat(plan.project_start)
+    target = (ps + timedelta(days=6)).isoformat()
+    later_target = (ps + timedelta(days=15)).isoformat()
     patch = add_task(plan, name="Купить молоко", description="", assignee="Мария",
-                     duration_days=7, predecessors=[], start_date="2026-05-11")
+                     duration_days=7, predecessors=[], start_date=target)
     milk_id = patch.changed_ids[0]
     moved = update_task(patch.plan, id=milk_id, predecessors=["design"],
-                        start_date="2026-05-20")
+                        start_date=later_target)
     sched = {s.id: s for s in compute_schedule(moved.plan)}
-    assert sched[milk_id].start == "2026-05-20"
+    assert sched[milk_id].start == later_target
