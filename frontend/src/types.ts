@@ -23,6 +23,7 @@ export interface Plan {
 export interface PlanPatch {
   plan: Plan;
   changed_ids: string[];
+  schedule?: Scheduled[] | null;
 }
 
 export interface PlanAndSchedule {
@@ -39,6 +40,11 @@ export interface ToolCallEvent {
 export interface PatchEvent {
   type: 'patch';
   plan_patch: PlanPatch;
+}
+
+export interface ToolCallSummary {
+  tool: string;
+  args: Record<string, unknown>;
 }
 
 export interface MessageEvent {

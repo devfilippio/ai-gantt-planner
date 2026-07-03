@@ -31,6 +31,13 @@ class Plan(BaseModel):
 
 
 class PlanPatch(BaseModel):
-    """Full plan after a mutation, plus which task ids changed (for UI highlight)."""
+    """Full plan after a mutation, plus which task ids changed (for UI highlight).
+
+    `schedule` is left unset by the tool layer (tools.py never computes it —
+    scheduling is the caller's concern) and is filled in by the SSE
+    formatting layer in api/index.py before the patch event reaches the
+    frontend, since the Gantt chart needs computed start/end dates to
+    reposition bars after an agent edit."""
     plan: Plan
     changed_ids: list[str] = Field(default_factory=list)
+    schedule: list[Scheduled] | None = None

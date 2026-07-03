@@ -131,7 +131,17 @@ def chat_route(body: ChatRequest) -> StreamingResponse:
                 if not snapshotted:
                     store.snapshot()
                     snapshotted = True
-                store.save_plan(agent_plan_from_patch(event))
+                patched_plan = agent_plan_from_patch(event)
+                store.save_plan(patched_plan)
+                # The Gantt chart never stores dates on tasks — they're always
+                # computed by the scheduler. Without a recomputed schedule
+                # here, the frontend has plan+changed_ids but no start/end
+                # dates to reposition bars against, so the chart would sit
+                # frozen after an agent edit. Enrich the patch event with the
+                # freshly computed schedule so the store can reposition bars
+                # live, in the same event the chip/highlight reacts to.
+                schedule = compute_schedule(patched_plan)
+                event["plan_patch"]["schedule"] = [s.model_dump() for s in schedule]
             yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")

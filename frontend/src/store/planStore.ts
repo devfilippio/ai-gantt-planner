@@ -4,10 +4,11 @@ import type { Plan, PlanPatch, Scheduled } from '../types';
 
 const HIGHLIGHT_DURATION_MS = 1200;
 
-export interface ChatMessage {
-  role: 'user' | 'agent' | 'error';
-  text: string;
-}
+export type ChatMessage =
+  | { role: 'user'; text: string }
+  | { role: 'agent'; text: string }
+  | { role: 'error'; text: string }
+  | { role: 'tool_call'; tool: string; args: Record<string, unknown>; taskIds: string[] };
 
 interface PlanState {
   plan: Plan | null;
@@ -21,6 +22,7 @@ interface PlanState {
   resetPlan: () => Promise<void>;
   applyPatch: (patch: PlanPatch) => void;
   pushChat: (message: ChatMessage) => void;
+  clearToolChips: () => void;
   undo: () => Promise<void>;
   resizeTask: (id: string, patch: TaskUpdate) => Promise<void>;
 }
@@ -56,10 +58,16 @@ export const usePlanStore = create<PlanState>((set, get) => ({
   },
 
   applyPatch: (patch: PlanPatch) => {
-    set({
+    set((state) => ({
       plan: patch.plan,
+      // The backend now enriches the SSE `patch` event with a freshly
+      // computed schedule (see api/index.py chat_route). Without setting it
+      // here too, the Gantt bars would keep their stale start/end dates and
+      // never reposition after an agent edit — plan alone isn't enough
+      // because dates are always derived, never stored on Task itself.
+      schedule: patch.schedule ?? state.schedule,
       changedIds: patch.changed_ids,
-    });
+    }));
 
     if (highlightTimer) clearTimeout(highlightTimer);
     highlightTimer = setTimeout(() => {
@@ -71,11 +79,19 @@ export const usePlanStore = create<PlanState>((set, get) => ({
     set((state) => ({ chatLog: [...state.chatLog, message] }));
   },
 
+  clearToolChips: () => {
+    set((state) => ({ chatLog: state.chatLog.filter((m) => m.role !== 'tool_call') }));
+  },
+
   undo: async () => {
     set({ loading: true, error: null });
     try {
       const { plan, schedule } = await undoPlan();
+      // Undo reverts the plan to its pre-agent-edit snapshot, so any tool
+      // chips referencing the edit that's being undone are stale — drop
+      // them from the chat log along with the highlight state.
       set({ plan, schedule, loading: false, changedIds: [] });
+      get().clearToolChips();
     } catch (err) {
       set({ error: (err as Error).message, loading: false });
     }
