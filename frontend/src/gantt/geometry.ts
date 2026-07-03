@@ -61,9 +61,12 @@ export interface Bar {
 
 /**
  * Compute the pixel rect for a scheduled task's bar.
- * `rowHeight` is the full row height; the bar itself is inset within the row
- * (handled by the caller/component via a fixed bar height) — this helper
- * returns the row's vertical band (y, h) plus the bar's horizontal span.
+ * `rowHeight` is the full row height; `headerHeight` offsets every row band
+ * below the chart's timeline header so row 1 starts at y = headerHeight
+ * (matching a `headerHeight`-tall spacer in the left column). This helper
+ * returns the row's vertical band (y, h) plus the bar's horizontal span; the
+ * caller derives the actual bar rect (vertically centered, shorter than the
+ * row) from this band.
  */
 export function taskBar(
   scheduled: Pick<Scheduled, 'start' | 'end'>,
@@ -71,12 +74,13 @@ export function taskBar(
   rowHeight: number,
   dayWidth: number,
   projectStartISO: string,
+  headerHeight = 0,
 ): Bar {
   const x = dateToX(scheduled.start, projectStartISO, dayWidth);
   const endX = dateToX(scheduled.end, projectStartISO, dayWidth);
   return {
     x,
-    y: rowIndex * rowHeight,
+    y: rowIndex * rowHeight + headerHeight,
     w: Math.max(endX - x, 1),
     h: rowHeight,
   };
@@ -103,6 +107,77 @@ export function weekTicks(
     ticks.push({ x: day * dayWidth, label: formatRuDay(ts) });
   }
   return ticks;
+}
+
+export interface MonthSpan {
+  /** Left pixel edge of this month's portion of the chart. */
+  x: number;
+  /** Pixel width of this month's portion of the chart (may be partial at the chart's edges). */
+  w: number;
+  /** Horizontal center of the span — where the month label should be drawn. */
+  centerX: number;
+  /** e.g. "МАЙ 2026". */
+  label: string;
+}
+
+/**
+ * Contiguous month spans covering `totalDays` calendar days starting at
+ * `projectStartISO`, for the upper strip of the two-tier timeline header.
+ * Each month prints its label once, centered over its own (possibly partial)
+ * range, rather than once per week tick.
+ *
+ * Manual check: projectStart="2026-05-05", totalDays=29 → spans
+ * [МАЙ 2026: day 0..26 (x=0, w=26*dayWidth)], [ИЮНЬ 2026: day 26..29 (x=26*dayWidth, w=3*dayWidth)].
+ * (May has 31 days; 2026-05-05 + 26 days = 2026-05-31, so May's span covers
+ * days 0..26 — the 26 remaining days of May — and June picks up from day 26.)
+ */
+const RU_MONTHS_FULL = [
+  'ЯНВАРЬ',
+  'ФЕВРАЛЬ',
+  'МАРТ',
+  'АПРЕЛЬ',
+  'МАЙ',
+  'ИЮНЬ',
+  'ИЮЛЬ',
+  'АВГУСТ',
+  'СЕНТЯБРЬ',
+  'ОКТЯБРЬ',
+  'НОЯБРЬ',
+  'ДЕКАБРЬ',
+];
+
+export function monthSpans(
+  projectStartISO: string,
+  totalDays: number,
+  dayWidth: number,
+): MonthSpan[] {
+  const startTs = parseISODate(projectStartISO);
+  const spans: MonthSpan[] = [];
+  let dayCursor = 0;
+
+  while (dayCursor < totalDays) {
+    const ts = startTs + dayCursor * MS_PER_DAY;
+    const date = new Date(ts);
+    const year = date.getUTCFullYear();
+    const month = date.getUTCMonth();
+    const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+    const dayOfMonth = date.getUTCDate();
+    const daysRemainingInMonth = daysInMonth - dayOfMonth + 1;
+    const spanDays = Math.min(daysRemainingInMonth, totalDays - dayCursor);
+
+    const x = dayCursor * dayWidth;
+    const w = spanDays * dayWidth;
+    spans.push({
+      x,
+      w,
+      centerX: x + w / 2,
+      label: `${RU_MONTHS_FULL[month]} ${year}`,
+    });
+
+    dayCursor += spanDays;
+  }
+
+  return spans;
 }
 
 /**
