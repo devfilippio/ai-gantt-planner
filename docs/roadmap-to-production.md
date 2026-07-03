@@ -1,6 +1,6 @@
 # Roadmap to production
 
-This project is a test-task/demo build: fully tested (32 backend unit tests, 12 Playwright E2E specs across desktop + a recorded demo project), but deliberately scoped down in places to fit the appetite. This document is the honest account of what's cut, why, and what order to close the gaps in before this could carry real users or real money.
+This project is a test-task/demo build: fully tested (49 backend unit tests, 14 Playwright E2E specs across desktop + a recorded demo project), but deliberately scoped down in places to fit the appetite. This document is the honest account of what's cut, why, and what order to close the gaps in before this could carry real users or real money.
 
 ## Intentional tech debt (cut on purpose, with a known cost)
 
