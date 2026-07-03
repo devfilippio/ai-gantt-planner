@@ -1,16 +1,23 @@
 from __future__ import annotations
 
 import io
+import json
 
 from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
+from api import agent
 from api.excel import ImportError_, export_plan, import_plan
 from api.scheduler import compute_schedule
 from api.store import get_store
 from api.tools import ToolError
 
 app = FastAPI(title="AI Gantt Planner")
+
+
+class ChatRequest(BaseModel):
+    message: str
 
 XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
@@ -64,3 +71,28 @@ async def import_plan_route(file: UploadFile) -> dict:
         raise HTTPException(status_code=400, detail=str(e))
     store.save_plan(plan)
     return _plan_and_schedule()
+
+
+@app.post("/api/chat")
+def chat_route(body: ChatRequest) -> StreamingResponse:
+    store = get_store()
+    plan = store.get_plan()
+    llm = agent.default_llm()
+
+    def event_stream():
+        snapshotted = False
+        for event in agent.run_agent_turn(body.message, plan, llm=llm):
+            if event["type"] == "patch":
+                if not snapshotted:
+                    store.snapshot()
+                    snapshotted = True
+                store.save_plan(agent_plan_from_patch(event))
+            yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+def agent_plan_from_patch(event: dict):
+    from api.models import Plan
+
+    return Plan.model_validate(event["plan_patch"]["plan"])
