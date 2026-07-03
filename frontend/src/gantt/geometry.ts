@@ -10,6 +10,17 @@ import type { Scheduled } from '../types';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
+/**
+ * Fixed "today" reference for the demo: project_start + 12 calendar days.
+ * The seed plan's `project_start` (2026-05-05) is itself a fixed constant,
+ * so anchoring "today" to it (rather than the real wall-clock date) keeps
+ * the chart's most interesting moment — mid-build, roughly halfway through
+ * the 7-task "Запуск лендинга" plan — reproducible across every screenshot,
+ * demo, and Playwright run. Shared between GanttChart (today line) and
+ * TaskModal (mini timeline's today marker) so both surfaces agree.
+ */
+export const TODAY_OFFSET_DAYS = 12;
+
 const RU_MONTHS = [
   'ЯНВ',
   'ФЕВ',
@@ -89,6 +100,40 @@ export function taskBar(
 export interface WeekTick {
   x: number;
   label: string;
+}
+
+export interface DayTick {
+  x: number;
+  /** 2-digit day-of-month, e.g. "05". */
+  label: string;
+  isWeekend: boolean;
+  isWeekStart: boolean;
+}
+
+/**
+ * Per-day tick positions for the day-zoom lower header strip, one entry per
+ * calendar day in [projectStart, projectStart + totalDays). Used to print a
+ * numeral in every day cell and to drive weekend-column shading — unlike
+ * `weekTicks` (week boundaries only, for the week-zoom header).
+ *
+ * `isWeekStart` flags Mondays (ISO week start) so the day grid can draw a
+ * slightly stronger boundary line there, matching frappe-gantt's convention.
+ */
+export function dayTicks(projectStartISO: string, totalDays: number, dayWidth: number): DayTick[] {
+  const startTs = parseISODate(projectStartISO);
+  const ticks: DayTick[] = [];
+  for (let day = 0; day < totalDays; day += 1) {
+    const ts = startTs + day * MS_PER_DAY;
+    const date = new Date(ts);
+    const dow = date.getUTCDay(); // 0 = Sunday, 6 = Saturday
+    ticks.push({
+      x: day * dayWidth,
+      label: String(date.getUTCDate()).padStart(2, '0'),
+      isWeekend: dow === 0 || dow === 6,
+      isWeekStart: dow === 1,
+    });
+  }
+  return ticks;
 }
 
 /**
@@ -180,23 +225,162 @@ export function monthSpans(
   return spans;
 }
 
+/** Lowercase genitive-case month names ("12 МАЯ" reads "12 мая") for
+ * human-readable date ranges — Russian date phrases inflect the month noun
+ * to the genitive case ("мая", not the nominative "май" used in headers). */
+const RU_MONTHS_GENITIVE = [
+  'января',
+  'февраля',
+  'марта',
+  'апреля',
+  'мая',
+  'июня',
+  'июля',
+  'августа',
+  'сентября',
+  'октября',
+  'ноября',
+  'декабря',
+];
+
+/** Format a single ISO date as "12 мая 2026" (day, genitive month, year). */
+function formatRuDateSingle(dateISO: string): string {
+  const ts = parseISODate(dateISO);
+  const date = new Date(ts);
+  const day = date.getUTCDate();
+  const month = RU_MONTHS_GENITIVE[date.getUTCMonth()];
+  const year = date.getUTCFullYear();
+  return `${day} ${month} ${year}`;
+}
+
 /**
- * Smooth cubic-bezier SVG path from a predecessor bar's right edge to a
- * successor bar's left edge — the classic Gantt "S-curve" dependency arrow.
- * The control points pull horizontally so the curve reads left-to-right
- * regardless of how far apart the rows are vertically.
+ * Human-readable Russian date range for the task modal, e.g.
+ * "12 мая → 18 мая 2026". The year is printed once, on the end date, unless
+ * the range spans a year boundary (then both dates carry their own year).
  */
-export function dependencyPath(fromBar: Bar, toBar: Bar): string {
+export function formatRuDateLong(startISO: string, endISO: string): string {
+  const startTs = parseISODate(startISO);
+  const endTs = parseISODate(endISO);
+  const startYear = new Date(startTs).getUTCFullYear();
+  const endYear = new Date(endTs).getUTCFullYear();
+
+  if (startYear !== endYear) {
+    return `${formatRuDateSingle(startISO)} → ${formatRuDateSingle(endISO)}`;
+  }
+
+  const startDate = new Date(startTs);
+  const startDay = startDate.getUTCDate();
+  const startMonth = RU_MONTHS_GENITIVE[startDate.getUTCMonth()];
+  return `${startDay} ${startMonth} → ${formatRuDateSingle(endISO)}`;
+}
+
+/** Arc radius for the rounded elbow turns in `dependencyPath`. */
+const ELBOW_RADIUS = 5;
+/** Horizontal run out of the source bar / into the target bar before turning. */
+const ELBOW_INDENT = 12;
+
+/**
+ * Build a rounded-corner SVG path from a list of orthogonal waypoints (each
+ * segment between consecutive points must be purely horizontal or purely
+ * vertical). Every interior corner is rounded to radius `r` (clamped so it
+ * never eats more than half of either adjacent segment) using a quadratic
+ * Bezier, which — unlike an elliptical arc command — needs no sweep-flag
+ * bookkeeping: the same `Q cx,cy ex,ey` shape works regardless of turn
+ * direction, so this is much easier to get right (and keep right) than
+ * hand-deriving `A` sweep flags per corner.
+ */
+function roundedOrthogonalPath(points: { x: number; y: number }[], r: number): string {
+  if (points.length < 2) return '';
+  if (points.length === 2) {
+    return `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y}`;
+  }
+
+  const parts: string[] = [`M ${points[0].x} ${points[0].y}`];
+  for (let i = 1; i < points.length - 1; i += 1) {
+    const prev = points[i - 1];
+    const curr = points[i];
+    const next = points[i + 1];
+
+    const segIn = Math.min(Math.hypot(curr.x - prev.x, curr.y - prev.y) / 2, r);
+    const segOut = Math.min(Math.hypot(next.x - curr.x, next.y - curr.y) / 2, r);
+    const rr = Math.min(segIn, segOut);
+
+    const inX = curr.x - Math.sign(curr.x - prev.x) * rr;
+    const inY = curr.y - Math.sign(curr.y - prev.y) * rr;
+    const outX = curr.x + Math.sign(next.x - curr.x) * rr;
+    const outY = curr.y + Math.sign(next.y - curr.y) * rr;
+
+    parts.push(`L ${inX} ${inY}`, `Q ${curr.x} ${curr.y} ${outX} ${outY}`);
+  }
+  const last = points[points.length - 1];
+  parts.push(`L ${last.x} ${last.y}`);
+  return parts.join(' ');
+}
+
+/**
+ * Frappe-gantt-style orthogonal ("elbow") dependency path from a predecessor
+ * bar's right edge to a successor bar's left edge, with small rounded
+ * corners instead of sharp 90° turns. Two routing branches:
+ *
+ * - Normal case (target starts after the source's indent clears): exit
+ *   right-mid → short horizontal run → turn → vertical → turn → horizontal
+ *   into the target's left edge (a simple 4-point Z-elbow).
+ * - Overlap case (target starts before the source has cleared its own
+ *   indent — parallel/overlapping bars): a direct elbow would cut back
+ *   across the source (or target) bar body, so instead the line dips into
+ *   the gap between rows (the row boundary nearest the source, using
+ *   `rowHeight`) and travels there before turning down/up into the target's
+ *   left edge — never crossing a bar.
+ *
+ * `rowHeight` defaults to the bar's own height (h), a safe fallback when
+ * rows are tightly packed around their bars.
+ */
+export function dependencyPath(fromBar: Bar, toBar: Bar, rowHeight?: number): string {
   const startX = fromBar.x + fromBar.w;
   const startY = fromBar.y + fromBar.h / 2;
   const endX = toBar.x;
   const endY = toBar.y + toBar.h / 2;
+  const rh = rowHeight ?? fromBar.h;
+  const r = ELBOW_RADIUS;
 
-  const dx = Math.max(Math.abs(endX - startX) * 0.5, 24);
-  const c1x = startX + dx;
-  const c1y = startY;
-  const c2x = endX - dx;
-  const c2y = endY;
+  if (Math.abs(endY - startY) < 0.5) {
+    // Same row (rare, e.g. equal-duration parallel tasks) — a straight line.
+    return `M ${startX} ${startY} L ${endX} ${endY}`;
+  }
 
-  return `M ${startX} ${startY} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${endX} ${endY}`;
+  // Normal case: enough horizontal room to run out of the source, turn
+  // toward the target's row, and turn again into its left edge. Requires
+  // some slack past the indent so the two rounded corners (source-exit turn
+  // and target-entry turn) don't need to overlap each other.
+  const midX = startX + ELBOW_INDENT;
+  if (endX >= midX + r * 2) {
+    return roundedOrthogonalPath(
+      [
+        { x: startX, y: startY },
+        { x: midX, y: startY },
+        { x: midX, y: endY },
+        { x: endX, y: endY },
+      ],
+      r,
+    );
+  }
+
+  // Overlap case: the target's left edge sits before the source can turn
+  // toward it — route through the gap between rows instead of straight
+  // across, so the line never crosses a bar body.
+  const goingDown = endY > startY;
+  const gapY = goingDown ? fromBar.y + rh : fromBar.y;
+  const approachX = endX - ELBOW_INDENT;
+
+  return roundedOrthogonalPath(
+    [
+      { x: startX, y: startY },
+      { x: midX, y: startY },
+      { x: midX, y: gapY },
+      { x: approachX, y: gapY },
+      { x: approachX, y: endY },
+      { x: endX, y: endY },
+    ],
+    r,
+  );
 }

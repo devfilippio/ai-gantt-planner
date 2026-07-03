@@ -133,9 +133,23 @@
   pointer-events: none;
 }
 
+/* Full-height weekend column tint — barely perceptible, à la SVAR/frappe. */
+.gantt__weekend-band {
+  fill: rgba(255, 255, 255, 0.022);
+  pointer-events: none;
+}
+
+/* Day grid should whisper: very faint per-day lines, Monday (week-start)
+   boundaries a touch stronger so weeks are still readable at a glance. */
 .gantt__grid-line {
   stroke: var(--line);
-  stroke-width: 1;
+  stroke-width: 0.4;
+  opacity: 0.5;
+}
+
+.gantt__grid-line[data-week-start='true'] {
+  stroke-width: 0.7;
+  opacity: 0.9;
 }
 
 .gantt__grid-label {
@@ -143,6 +157,19 @@
   font-size: 11px;
   letter-spacing: 0.05em;
   fill: var(--text-mute);
+}
+
+/* Day-zoom lower header strip: a numeral for every day, centered in its cell. */
+.gantt__day-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  fill: var(--text-mute);
+  text-anchor: middle;
+}
+
+.gantt__day-label[data-weekend='true'] {
+  opacity: 0.55;
 }
 
 .gantt__today-line {

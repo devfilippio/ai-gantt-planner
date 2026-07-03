@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { usePlanStore } from '../store/planStore';
-import { daysBetween, dependencyPath, monthSpans, taskBar, weekTicks } from '../gantt/geometry';
+import {
+  TODAY_OFFSET_DAYS,
+  dayTicks,
+  daysBetween,
+  dependencyPath,
+  monthSpans,
+  taskBar,
+  weekTicks,
+} from '../gantt/geometry';
 import type { Bar } from '../gantt/geometry';
 import type { Scheduled, Task } from '../types';
 import './GanttChart.css';
@@ -14,16 +22,6 @@ const HEADER_SPLIT = HEADER_H / 2; // y where the month strip ends and the week 
 const DAY_WIDTH_DAY_ZOOM = 34;
 const DAY_WIDTH_WEEK_ZOOM = 12;
 const CHART_PADDING_DAYS = 6; // trailing whitespace so the last bar isn't flush against the edge
-
-/**
- * Fixed "today" reference for the demo: project_start + 12 calendar days.
- * The seed plan's `project_start` (2026-05-05) is itself a fixed constant,
- * so anchoring "today" to it (rather than the real wall-clock date) keeps
- * the chart's most interesting moment — mid-build, roughly halfway through
- * the 7-task "Запуск лендинга" plan — reproducible across every screenshot,
- * demo, and Playwright run.
- */
-const TODAY_OFFSET_DAYS = 12;
 
 type Zoom = 'day' | 'week';
 
@@ -90,6 +88,11 @@ export function GanttChart({ onSelectTask }: GanttChartProps) {
     [projectStart, totalDays, dayWidth],
   );
 
+  const days = useMemo(
+    () => dayTicks(projectStart, totalDays, dayWidth),
+    [projectStart, totalDays, dayWidth],
+  );
+
   const months = useMemo(
     () => monthSpans(projectStart, totalDays, dayWidth),
     [projectStart, totalDays, dayWidth],
@@ -118,7 +121,7 @@ export function GanttChart({ onSelectTask }: GanttChartProps) {
       for (const predId of task.predecessors) {
         const fromBar = bars.get(predId);
         if (!fromBar) continue;
-        paths.push({ key: `${predId}->${task.id}`, d: dependencyPath(fromBar, toBar) });
+        paths.push({ key: `${predId}->${task.id}`, d: dependencyPath(fromBar, toBar, ROW_HEIGHT) });
       }
     }
     return paths;
@@ -218,13 +221,22 @@ export function GanttChart({ onSelectTask }: GanttChartProps) {
             <marker
               id="dep-arrowhead"
               viewBox="0 0 8 8"
-              refX="6.5"
+              refX="6"
               refY="4"
-              markerWidth="5"
-              markerHeight="5"
+              markerWidth="6.5"
+              markerHeight="6.5"
               orient="auto-start-reverse"
             >
-              <path d="M 0 0.5 L 7 4 L 0 7.5 z" fill="var(--text-mute)" />
+              {/* Small stroke-based caret/chevron (frappe-style), not a filled
+                  triangle — reads as a quiet direction hint, not a shout. */}
+              <path
+                d="M 1 1 L 6.5 4 L 1 7"
+                fill="none"
+                stroke="var(--text-mute)"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
             </marker>
             <filter id="bar-shadow" x="-20%" y="-60%" width="140%" height="260%">
               <feDropShadow dx="0" dy="1.5" stdDeviation="1.5" floodColor="#000000" floodOpacity="0.45" />
@@ -245,17 +257,49 @@ export function GanttChart({ onSelectTask }: GanttChartProps) {
             ) : null,
           )}
 
-          {/* Week grid (below header) */}
-          {ticks.map((tick) => (
-            <line
-              key={tick.x}
-              className="gantt__grid-line"
-              x1={tick.x}
-              x2={tick.x}
-              y1={HEADER_H}
-              y2={Math.max(chartHeight, ROW_HEIGHT + HEADER_H)}
-            />
-          ))}
+          {/* Weekend column shading — full-height, barely-there tint (day zoom only;
+              at week zoom individual weekend columns are too thin to read as shading). */}
+          {zoom === 'day' &&
+            days.map(
+              (day) =>
+                day.isWeekend && (
+                  <rect
+                    key={`weekend-${day.x}`}
+                    className="gantt__weekend-band"
+                    x={day.x}
+                    y={HEADER_H}
+                    width={dayWidth}
+                    height={Math.max(chartHeight, ROW_HEIGHT + HEADER_H) - HEADER_H}
+                  />
+                ),
+            )}
+
+          {/* Day/week grid (below header). At day zoom, per-day lines whisper and
+              week (Monday) boundaries read slightly stronger; at week zoom we keep
+              the coarser week-boundary-only grid. */}
+          {zoom === 'day'
+            ? days.map((day) => (
+                <line
+                  key={day.x}
+                  className="gantt__grid-line"
+                  data-week-start={day.isWeekStart}
+                  x1={day.x}
+                  x2={day.x}
+                  y1={HEADER_H}
+                  y2={Math.max(chartHeight, ROW_HEIGHT + HEADER_H)}
+                />
+              ))
+            : ticks.map((tick) => (
+                <line
+                  key={tick.x}
+                  className="gantt__grid-line"
+                  data-week-start="true"
+                  x1={tick.x}
+                  x2={tick.x}
+                  y1={HEADER_H}
+                  y2={Math.max(chartHeight, ROW_HEIGHT + HEADER_H)}
+                />
+              ))}
 
           {/* Today line */}
           {todayX <= chartWidth && (
@@ -378,20 +422,42 @@ export function GanttChart({ onSelectTask }: GanttChartProps) {
               </g>
             ))}
             <line className="gantt__header-rule" x1={0} x2={chartWidth} y1={HEADER_SPLIT} y2={HEADER_SPLIT} />
-            {ticks.map((tick) => (
-              <g key={`tick-${tick.x}`}>
-                <line
-                  className="gantt__tick-mark"
-                  x1={tick.x}
-                  x2={tick.x}
-                  y1={HEADER_SPLIT}
-                  y2={HEADER_H}
-                />
-                <text className="gantt__grid-label" x={tick.x + 6} y={HEADER_H - 7}>
-                  {tick.label}
-                </text>
-              </g>
-            ))}
+            {zoom === 'day'
+              ? days.map((day) => (
+                  <g key={`day-${day.x}`}>
+                    {day.isWeekStart && (
+                      <line
+                        className="gantt__tick-mark"
+                        x1={day.x}
+                        x2={day.x}
+                        y1={HEADER_SPLIT}
+                        y2={HEADER_H}
+                      />
+                    )}
+                    <text
+                      className="gantt__day-label"
+                      data-weekend={day.isWeekend}
+                      x={day.x + dayWidth / 2}
+                      y={HEADER_H - 7}
+                    >
+                      {day.label}
+                    </text>
+                  </g>
+                ))
+              : ticks.map((tick) => (
+                  <g key={`tick-${tick.x}`}>
+                    <line
+                      className="gantt__tick-mark"
+                      x1={tick.x}
+                      x2={tick.x}
+                      y1={HEADER_SPLIT}
+                      y2={HEADER_H}
+                    />
+                    <text className="gantt__grid-label" x={tick.x + 6} y={HEADER_H - 7}>
+                      {tick.label}
+                    </text>
+                  </g>
+                ))}
             {todayX <= chartWidth && (
               <circle className="gantt__today-pin" cx={todayX} cy={HEADER_SPLIT / 2} r={3} />
             )}
