@@ -1,5 +1,7 @@
+import pytest
+
 from api.models import Task, Plan
-from api.scheduler import compute_schedule
+from api.scheduler import CycleError, compute_schedule
 
 
 def _plan(*tasks):
@@ -31,3 +33,25 @@ def test_task_with_two_predecessors_starts_after_latest():
     )
     sched = {s.id: s for s in compute_schedule(plan)}
     assert sched["c"].start == "2026-05-12"  # after B (longer)
+
+
+def test_cycle_raises_with_offending_ids():
+    plan = _plan(
+        Task(id="a", name="A", duration_days=1, predecessors=["b"]),
+        Task(id="b", name="B", duration_days=1, predecessors=["a"]),
+    )
+    with pytest.raises(CycleError) as exc:
+        compute_schedule(plan)
+    assert set(exc.value.cycle) == {"a", "b"}
+
+
+def test_critical_path_flag():
+    plan = _plan(
+        Task(id="a", name="A", duration_days=3, predecessors=[]),
+        Task(id="b", name="B", duration_days=7, predecessors=[]),
+        Task(id="c", name="C", duration_days=1, predecessors=["a", "b"]),
+    )
+    sched = {s.id: s for s in compute_schedule(plan)}
+    assert sched["c"].is_critical is True
+    assert sched["b"].is_critical is True   # longer branch feeds c
+    assert sched["a"].is_critical is False  # slack
