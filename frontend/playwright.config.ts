@@ -5,7 +5,14 @@ const BACKEND_URL = 'http://127.0.0.1:8000';
 
 export default defineConfig({
   testDir: './e2e',
-  fullyParallel: true,
+  // The backend plan store is a single process-wide singleton (see
+  // api/store.py) with no per-test isolation, so specs that mutate the
+  // plan (chat edits, excel import, drag-resize, reset) race each other
+  // under fullyParallel workers and produce flaky cross-file failures.
+  // Run test *files* serially (one worker) until the backend supports
+  // per-test state; within a file, tests still run in source order.
+  fullyParallel: false,
+  workers: 1,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   reporter: 'list',
