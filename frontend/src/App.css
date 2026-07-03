@@ -23,6 +23,7 @@
   background: var(--surface-1);
   padding: 14px 18px;
   box-sizing: border-box;
+  overflow: hidden;
 }
 
 @media (max-width: 860px) {

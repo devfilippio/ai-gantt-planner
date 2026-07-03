@@ -1,8 +1,12 @@
 .chat-panel {
   display: flex;
   flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  flex: 1;
   height: 100%;
   min-height: 480px;
+  box-sizing: border-box;
 }
 
 .chat-panel__header {
@@ -43,7 +47,9 @@
 
 .chat-panel__log {
   flex: 1;
+  min-width: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -95,6 +101,8 @@
   line-height: 1.45;
   padding: 8px 12px;
   border-radius: 8px;
+  overflow-wrap: break-word;
+  word-break: break-word;
   animation: chat-msg-in 220ms cubic-bezier(0.32, 0.72, 0, 1);
 }
 
@@ -124,6 +132,7 @@
 
 .chat-panel__chip {
   align-self: flex-start;
+  max-width: 100%;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -135,6 +144,9 @@
   border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
   border-radius: 5px;
   padding: 6px 10px;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  box-sizing: border-box;
   animation: chat-msg-in 220ms cubic-bezier(0.32, 0.72, 0, 1);
 }
 
@@ -168,6 +180,7 @@
 
 .chat-panel__form {
   display: flex;
+  min-width: 0;
   gap: 8px;
   padding-top: 12px;
   margin-top: 12px;
