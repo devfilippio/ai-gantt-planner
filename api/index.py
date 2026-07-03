@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 import os
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
@@ -10,13 +11,28 @@ from pydantic import BaseModel
 
 from api import agent
 from api.excel import ImportError_, export_plan, import_plan
-from api.mcp_server import router as mcp_router
+from api.mcp_server import mcp, mcp_app
 from api.scheduler import compute_schedule
 from api.store import get_store
 from api.tools import ToolError
 
-app = FastAPI(title="AI Gantt Planner")
-app.include_router(mcp_router)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # FastMCP's streamable-HTTP ASGI app relies on its session manager's
+    # task group being active for the lifetime of the app. Since we mount
+    # that sub-app inside this FastAPI app rather than running it
+    # standalone, its own lifespan never fires unless we drive it from
+    # here. Running it as the outer app's lifespan ensures the session
+    # manager (stateless mode - no server-side session state) is started
+    # before any request (including to unrelated routes like /api/health)
+    # and cleaned up on shutdown.
+    async with mcp.session_manager.run():
+        yield
+
+
+app = FastAPI(title="AI Gantt Planner", lifespan=lifespan)
+app.mount("/api/mcp", mcp_app)
 
 
 class ChatRequest(BaseModel):
