@@ -49,8 +49,21 @@ app.add_middleware(
 )
 
 
+class ChatHistoryTurn(BaseModel):
+    """One prior turn of the conversation, as kept by the frontend's chat log.
+    `role` is "user" for the human's messages and "agent" for the assistant's
+    final text replies (tool-call chips and errors are not part of history —
+    only the conversational back-and-forth the model needs to resolve
+    follow-ups like "называется Ретро, 2 дня" after it asked a clarifying
+    question)."""
+
+    role: str
+    text: str
+
+
 class ChatRequest(BaseModel):
     message: str
+    history: list[ChatHistoryTurn] = []
 
 
 class TaskUpdateRequest(BaseModel):
@@ -142,7 +155,8 @@ def chat_route(body: ChatRequest) -> StreamingResponse:
             return
 
         snapshotted = False
-        for event in agent.run_agent_turn(body.message, plan, llm=llm):
+        history = [{"role": turn.role, "text": turn.text} for turn in body.history]
+        for event in agent.run_agent_turn(body.message, plan, llm=llm, history=history):
             if event["type"] == "patch":
                 if not snapshotted:
                     store.snapshot()

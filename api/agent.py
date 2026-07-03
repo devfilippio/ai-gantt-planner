@@ -2,43 +2,101 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import date, timedelta
 from typing import Any, Iterator, Protocol
 
 from api.models import Plan
+from api.scheduler import compute_schedule
 from api.tool_registry import TOOL_SCHEMAS, dispatch
 from api.tools import ToolError
 
 MAX_TURNS = 8
+HISTORY_CAP = 20
+
+# How far into the project a demo "today" sits, purely so the model has a
+# concrete anchor for relative phrasing ("на следующей неделе" etc.) - not
+# tied to any real wall-clock date since the seed plan lives in 2026-05.
+DEMO_TODAY_OFFSET_DAYS = 12
 
 
 def compact_plan(plan: Plan) -> str:
     """A small, LLM-friendly listing of the current plan so the model always
     knows the real task ids (and can resolve a user's "после вёрстки" to the
-    right id) without having to loop on get_plan."""
+    right id) without having to loop on get_plan.
+
+    Includes computed start/end dates (via compute_schedule) so the model can
+    reason about actual calendar dates - e.g. resolving "с 11 по 18 мая" into
+    a start_date/duration pair - not just relative durations in days. Falls
+    back to the plain duration-only listing if scheduling fails (e.g. a
+    dependency cycle mid-edit), so a broken plan never crashes the chat."""
     if not plan.tasks:
         return "(план пуст)"
-    lines = []
-    for t in plan.tasks:
-        preds = ", ".join(t.predecessors) if t.predecessors else "—"
-        lines.append(
-            f"{t.id} · {t.name} · {t.assignee} · {t.duration_days}д · предшественники: {preds}"
+
+    try:
+        schedule = {s.id: s for s in compute_schedule(plan)}
+        project_start = date.fromisoformat(plan.project_start)
+        today = project_start + timedelta(days=DEMO_TODAY_OFFSET_DAYS)
+        header = (
+            f"Старт проекта: {plan.project_start}. "
+            f"Сегодня по плану: {today.isoformat()}."
         )
-    return "\n".join(lines)
+        lines = [header]
+        for t in plan.tasks:
+            preds = ", ".join(t.predecessors) if t.predecessors else "—"
+            sched = schedule.get(t.id)
+            span = f"{sched.start}→{sched.end}" if sched else "?"
+            lines.append(
+                f"{t.id} · {t.name} · {t.assignee} · {t.duration_days}д · {span} · преды: {preds}"
+            )
+        return "\n".join(lines)
+    except Exception:
+        lines = []
+        for t in plan.tasks:
+            preds = ", ".join(t.predecessors) if t.predecessors else "—"
+            lines.append(
+                f"{t.id} · {t.name} · {t.assignee} · {t.duration_days}д · предшественники: {preds}"
+            )
+        return "\n".join(lines)
 
 SYSTEM_PROMPT = """\
-Ты — ассистент по управлению планом проекта (диаграмма Ганта).
+Ты — ассистент по управлению планом проекта (диаграмма Ганта). Владелец плана \
+— пользователь: это его план и его задачи, а не корпоративный проект, который \
+ты модерируешь.
 
-Правила:
+Главное правило: ЛЮБАЯ задача, которую пользователь просит добавить, легитимна. \
+«Купить молоко», «сходить к врачу», «забрать посылку» — валидные задачи плана, \
+если пользователь так решил. Никогда не оценивай уместность, важность или \
+«проектность» задачи и не отказывайся её добавить по этой причине.
+
+Используй разумные дефолты вместо переспросов:
+- Нет описания — оставь пустым.
+- Нет предшественников — задача независимая (predecessors: []).
+- Названа дата начала («с 11 мая», «начиная с понедельника») — передай её как \
+start_date (YYYY-MM-DD).
+- Назван диапазон дат («с 11 по 18 мая») — start_date = начало диапазона, \
+duration_days = число дней между датами (11→18 мая = 7 дней). Если пользователь \
+сам называет длительность в днях — используй её, а не дни между датами.
+- Год не указан — бери год из текущего плана (см. «Старт проекта» ниже).
+
+Переспрашивай ТОЛЬКО когда действие деструктивно-неоднозначно: например, «удали \
+задачу вёрстки» подходит под несколько задач и удаление нельзя отменить \
+неявно — в этом случае уточни, какую именно. Одного уточняющего вопроса \
+достаточно. История диалога тебе доступна: если пользователь уже ответил на \
+твой вопрос (в истории есть его ответ), НЕ переспрашивай снова — действуй по \
+полученному ответу.
+
+Если в одном сообщении несколько независимых просьб («добавь задачу для Марии \
+и удали задачу у Олега») — выполни ВСЕ их за один ход, вызвав нужные инструменты \
+подряд, а не по одной за раз.
+
+Технические правила:
 - Ты можешь изменять план ТОЛЬКО через доступные инструменты (tools). \
 Никогда не выдумывай изменения плана в тексте ответа — только вызовом инструмента.
-- Никогда не изобретай id задач. Используй только существующие id из плана. \
-Если нужного id нет или запрос неоднозначен — спроси пользователя, не гадай.
-- Если запрос двусмысленный (неясно, какую задачу/исполнителя имеют в виду), \
-задай уточняющий вопрос вместо того, чтобы вызывать инструмент наугад.
+- Никогда не изобретай id задач. Используй только существующие id из плана.
 - Если инструмент отклонил изменение (ошибка валидации, цикл зависимостей, \
 несуществующая задача и т.п.) — объясни пользователю простыми словами, почему \
 изменение не применено, и предложи, что можно сделать вместо этого.
-- Отвечай кратко и по-русски.
+- Без эмодзи. Отвечай кратко и по-русски.
 """
 
 
@@ -46,9 +104,37 @@ class LLM(Protocol):
     def create(self, messages: list[dict], tools: list[dict]) -> dict: ...
 
 
-def run_agent_turn(message: str, plan: Plan, llm: "LLM") -> Iterator[dict[str, Any]]:
+def _history_messages(history: list[dict] | None) -> list[dict]:
+    """Maps prior chat turns (role: "user"|"agent") onto OpenAI-shaped chat
+    messages (user->user, agent->assistant), capped to the most recent
+    HISTORY_CAP entries. Without this, each POST /api/chat only ever saw the
+    latest message, so the model had no memory of its own prior questions and
+    would re-ask things the user had already answered."""
+    if not history:
+        return []
+    capped = history[-HISTORY_CAP:]
+    mapped = []
+    for turn in capped:
+        role = turn.get("role")
+        text = turn.get("text", "")
+        if role == "user":
+            mapped.append({"role": "user", "content": text})
+        elif role == "agent":
+            mapped.append({"role": "assistant", "content": text})
+    return mapped
+
+
+def run_agent_turn(
+    message: str, plan: Plan, llm: "LLM", history: list[dict] | None = None
+) -> Iterator[dict[str, Any]]:
     """Runs one agent turn: loops calling llm.create with tool schemas, dispatching
     any tool calls against a working copy of the plan, and streaming events.
+
+    `history` is the prior chat turns in this conversation (list of
+    {"role": "user"|"agent", "text": str}), folded into the LLM messages
+    before the new `message` so the model has memory across turns - each
+    /api/chat call is otherwise stateless. Capped to the last HISTORY_CAP
+    entries.
 
     Yields dicts of shape:
       {"type": "tool_call", "tool": name, "args": args}
@@ -65,9 +151,10 @@ def run_agent_turn(message: str, plan: Plan, llm: "LLM") -> Iterator[dict[str, A
         # looping on get_plan.
         {
             "role": "system",
-            "content": "Текущий план (id · название · исполнитель · длительность · предшественники):\n"
+            "content": "Текущий план (id · название · исполнитель · длительность · старт→конец · предшественники):\n"
             + compact_plan(working_plan),
         },
+        *_history_messages(history),
         {"role": "user", "content": message},
     ]
 

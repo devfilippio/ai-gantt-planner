@@ -43,6 +43,41 @@ def test_chat_streams_sse(monkeypatch):
     assert "done" in body
 
 
+def test_chat_accepts_history_array(monkeypatch):
+    """POST /api/chat must accept an optional `history` array of prior turns
+    (role: user/agent) without erroring, and actually thread it through to
+    the agent so a real LLM can use it for follow-up context."""
+    from api import agent
+
+    captured = {}
+
+    class RecordingLLM:
+        def create(self, messages, tools):
+            captured["messages"] = messages
+            return {"content": "Готово."}
+
+    monkeypatch.setattr(agent, "default_llm", lambda: RecordingLLM())
+    client.post("/api/reset")
+
+    body = {
+        "message": "называется Ретро, 2 дня",
+        "history": [
+            {"role": "user", "text": "добавь задачу для Анны"},
+            {"role": "agent", "text": "Уточните название и длительность"},
+        ],
+    }
+    with client.stream("POST", "/api/chat", json=body) as r:
+        assert r.status_code == 200
+        body_text = "".join(chunk for chunk in r.iter_text())
+
+    assert "done" in body_text
+    msgs = captured["messages"]
+    contents = [(m["role"], m.get("content")) for m in msgs]
+    assert ("user", "добавь задачу для Анны") in contents
+    assert ("assistant", "Уточните название и длительность") in contents
+    assert contents[-1] == ("user", "называется Ретро, 2 дня")
+
+
 def test_chat_patch_event_includes_recomputed_schedule(monkeypatch):
     """The `patch` event must carry a `schedule` alongside plan/changed_ids —
     without it the frontend has no start/end dates to reposition Gantt bars

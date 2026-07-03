@@ -1,4 +1,4 @@
-from api.agent import run_agent_turn
+from api.agent import compact_plan, run_agent_turn
 from api.seed import seed_plan
 
 
@@ -64,6 +64,86 @@ def test_agent_feeds_real_tool_results_back_to_model():
     # without calling get_plan at all.
     system_texts = " ".join(m["content"] or "" for m in msgs if m["role"] == "system")
     assert "research" in system_texts
+
+
+def test_agent_injects_history_into_llm_messages():
+    """Regression for the no-memory bug: each POST /api/chat only sent the
+    latest message, so the model re-asked clarifying questions it had already
+    gotten answers to. run_agent_turn must fold prior turns (history) into the
+    messages sent to the LLM, mapped user->user and agent->assistant, before
+    the final new user message."""
+    plan = seed_plan()
+    llm = RecordingLLM()
+    history = [
+        {"role": "user", "text": "добавь задачу для Анны"},
+        {"role": "agent", "text": "Уточните название и длительность"},
+    ]
+    list(run_agent_turn("называется Ретро, 2 дня", plan, llm=llm, history=history))
+
+    # RecordingLLM's *first* call already gets the full messages list, but it
+    # only records on the second call. Use a simpler recorder-first-call LLM
+    # to check the first call's messages directly.
+    class FirstCallRecorder:
+        def __init__(self):
+            self.first_call_messages = None
+
+        def create(self, messages, tools):
+            if self.first_call_messages is None:
+                self.first_call_messages = [dict(m) for m in messages]
+            return {"content": "Готово."}
+
+    recorder = FirstCallRecorder()
+    list(run_agent_turn("называется Ретро, 2 дня", plan, llm=recorder, history=history))
+
+    msgs = recorder.first_call_messages
+    assert msgs is not None
+    # history user/agent turns must appear before the final user message,
+    # mapped to user/assistant roles respectively.
+    contents = [(m["role"], m.get("content")) for m in msgs]
+    assert ("user", "добавь задачу для Анны") in contents
+    assert ("assistant", "Уточните название и длительность") in contents
+    assert contents[-1] == ("user", "называется Ретро, 2 дня")
+    # history entry must come before the final message in the list.
+    history_user_idx = next(i for i, c in enumerate(contents) if c == ("user", "добавь задачу для Анны"))
+    final_idx = len(contents) - 1
+    assert history_user_idx < final_idx
+
+
+def test_agent_history_is_capped_at_last_20_entries():
+    plan = seed_plan()
+
+    class FirstCallRecorder:
+        def __init__(self):
+            self.first_call_messages = None
+
+        def create(self, messages, tools):
+            if self.first_call_messages is None:
+                self.first_call_messages = [dict(m) for m in messages]
+            return {"content": "Готово."}
+
+    long_history = [{"role": "user", "text": f"сообщение {i}"} for i in range(30)]
+    recorder = FirstCallRecorder()
+    list(run_agent_turn("финальное сообщение", plan, llm=recorder, history=long_history))
+
+    msgs = recorder.first_call_messages
+    history_derived = [m for m in msgs if m["role"] in ("user", "assistant") and m["content"] != "финальное сообщение"]
+    assert len(history_derived) == 20
+    # Only the most recent 20 of the 30 should survive (messages 10..29).
+    assert history_derived[0]["content"] == "сообщение 10"
+    assert history_derived[-1]["content"] == "сообщение 29"
+
+
+def test_compact_plan_includes_computed_dates_and_header():
+    """compact_plan must surface computed start/end dates (via
+    compute_schedule) so the model can reason about calendar dates when the
+    user says things like 'с 11 по 18 мая' — not just duration in days."""
+    plan = seed_plan()
+    text = compact_plan(plan)
+    assert "Старт проекта: 2026-05-05." in text
+    assert "Сегодня по плану:" in text
+    # per-task lines should show a start->end date range, not just duration.
+    assert "research" in text
+    assert "2026-05-05" in text  # research starts at project_start
 
 
 def test_agent_mock_add_task_creates_task_with_resolved_predecessor():
