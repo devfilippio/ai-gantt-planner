@@ -72,9 +72,9 @@ vercel.json
 
 ## Процесс и статус
 
-Процесс: brainstorming ✅ → дизайн утверждён ✅ (вариант A, Vercel, Neon, SSE, MCP) → **спека** (`docs/superpowers/specs/`) → writing-plans → TDD-имплементация → code-review → деплой → демо → README/Roadmap.
+Процесс: brainstorming ✅ → дизайн утверждён ✅ (вариант A, Vercel, Neon, SSE, MCP) → **спека** ✅ (`docs/superpowers/specs/`) → writing-plans ✅ → TDD-имплементация ✅ → code-review ✅ → README/Roadmap ✅ → демо ✅ → деплой ⏳.
 
-Статус на 2026-07-03: дизайн и мокап утверждены владельцем; идёт установка скиллов; следующий шаг — спека и план.
+Статус на 2026-07-03: приложение построено и протестировано — backend (32 pytest, зелёные) + frontend (`npm run build` чистый) + E2E (12 Playwright-спеков на desktop, включая `golden-path` и записанный `demo`) все зелёные. README.md и `docs/roadmap-to-production.md` написаны. `docs/demo.gif` записан и закоммичен. Осталось только: деплой на Vercel + провижининг Neon — ждём кредов от владельца (см. Task 9.2 в плане), после чего проверить `/api/health`, `/api/plan`, chat-стриминг, export на проде и вписать live-URL в README.
 
 ## Правила
 
