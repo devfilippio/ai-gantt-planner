@@ -31,6 +31,19 @@ export default defineConfig({
       name: 'mobile',
       use: { ...devices['Desktop Chrome'], viewport: { width: 390, height: 844 } },
     },
+    {
+      // Dedicated project for recording the demo scenario (see e2e/demo.spec.ts).
+      // Only this project records video — desktop/mobile stay fast and
+      // artifact-free for normal CI/local runs. Run with:
+      //   npx playwright test demo --project=demo-recording
+      name: 'demo-recording',
+      testMatch: /demo\.spec\.ts/,
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1440, height: 900 },
+        video: { mode: 'on', size: { width: 1440, height: 900 } },
+      },
+    },
   ],
 
   webServer: [
