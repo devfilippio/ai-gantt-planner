@@ -15,6 +15,9 @@ class Task(BaseModel):
     @field_validator("predecessors")
     @classmethod
     def no_self_reference(cls, v: list[str], info) -> list[str]:
+        tid = info.data.get("id")
+        if tid is not None and tid in v:
+            raise ValueError(f"Task '{tid}' cannot list itself as a predecessor")
         return v
 
 

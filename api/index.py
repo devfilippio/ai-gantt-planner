@@ -106,10 +106,17 @@ def export_plan_route() -> StreamingResponse:
     )
 
 
+MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # 5 MB — an .xlsx task list is a few KB
+
+
 @app.post("/api/plan/import")
 async def import_plan_route(file: UploadFile) -> dict:
     store = get_store()
     data = await file.read()
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="Файл слишком большой (максимум 5 МБ)")
+    if data[:2] != b"PK":  # every .xlsx is a zip archive
+        raise HTTPException(status_code=400, detail="Ожидается файл .xlsx")
     try:
         plan = import_plan(data)
     except (ImportError_, ToolError) as e:

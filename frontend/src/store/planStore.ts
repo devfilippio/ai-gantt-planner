@@ -51,7 +51,9 @@ export const usePlanStore = create<PlanState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const { plan, schedule } = await resetPlan();
-      set({ plan, schedule, loading: false, changedIds: [] });
+      // Reset reseeds the plan, so any chat messages and tool chips from the
+      // prior session now reference tasks that no longer match — clear them.
+      set({ plan, schedule, loading: false, changedIds: [], chatLog: [] });
     } catch (err) {
       set({ error: (err as Error).message, loading: false });
     }
