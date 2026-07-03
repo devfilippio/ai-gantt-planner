@@ -1011,6 +1011,8 @@ Expected: FAIL — module missing.
 
 - [ ] **Step 3: Implement `api/agent.py`** — `run_agent_turn(message, plan, llm)` generator: build system prompt (guardrails: operate only via tools on the plan, ask when ambiguous, never invent ids, explain rejected mutations), loop calling `llm.create(messages, TOOL_SCHEMAS)`; on tool_calls → `dispatch` each, update working plan, `yield {"type":"tool_call",...}` then `{"type":"patch","plan_patch":patch.model_dump()}`; on `ToolError` → `yield {"type":"error","detail":...}` and continue; on content → `yield {"type":"message","text":...}` then `{"type":"done"}`. Define a real `OpenRouterLLM` class wrapping the `openai` client pointed at `https://openrouter.ai/api/v1` with model `anthropic/claude-sonnet-4.5` and fallback `openai/gpt-4o`; keep it out of the unit test.
 
+  Also implement a **deterministic `MockLLM`** (in `api/agent.py`) used by E2E and by the SSE test: it keyword-matches the user message to a scripted tool call — e.g. contains "олег"+"недел" → `shift_tasks(assignee="Олег", days=7)`; "марию"+"петра" → `reassign_tasks(...)`; else a plain message. Add `default_llm()` factory: returns `MockLLM()` when `os.getenv("MOCK_LLM") == "1"` or `ENV == "test"`, otherwise `OpenRouterLLM()`. This single seam makes both unit tests and browser E2E reproducible without spending tokens.
+
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `.venv/Scripts/python -m pytest tests/test_agent.py -v`
@@ -1157,6 +1159,50 @@ git add frontend/src/types.ts frontend/src/api/ frontend/src/store/
 git commit -m "feat: frontend types, api client, plan store"
 ```
 
+### Task 6.3: E2E harness (Playwright + deterministic backend)
+
+**Files:**
+- Create: `frontend/playwright.config.ts`, `frontend/e2e/fixtures.ts`, `frontend/e2e/smoke.spec.ts`
+- Create: `scripts/run_e2e.sh` (or `.ps1`) — boots backend with `MOCK_LLM=1` + built frontend, runs Playwright, tears down.
+
+- [ ] **Step 1: Install Playwright**
+
+Run: `cd frontend && npm install -D @playwright/test && npx playwright install chromium`
+Expected: browser installed.
+
+- [ ] **Step 2: `playwright.config.ts`** — `testDir: './e2e'`, `use.baseURL: 'http://127.0.0.1:4173'`, `webServer` array: (a) backend `..\.venv\Scripts\python -m uvicorn api.index:app --port 8000` with env `{ENV:'test', MOCK_LLM:'1'}`, (b) frontend preview `npm run build && npm run preview -- --port 4173` with API proxied to `:8000`. `reuseExistingServer: !process.env.CI`. Add `viewport` projects for 1440×900 and 390×844.
+
+  Note: frontend must call the backend — set Vite `server.proxy`/`preview` proxy or an env `VITE_API_BASE=http://127.0.0.1:8000` consumed by `api/client.ts`, so E2E hits the real FastAPI with the mock LLM.
+
+- [ ] **Step 3: `e2e/smoke.spec.ts`** — first real spec, proves the harness:
+
+```ts
+import { test, expect } from '@playwright/test';
+
+test('app loads seeded gantt', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByText('ПЛАН ПРОЕКТА')).toBeVisible();
+  // at least 20 task rows rendered
+  const bars = page.locator('[data-testid="task-bar"]');
+  await expect(bars).toHaveCount(await bars.count());
+  expect(await bars.count()).toBeGreaterThanOrEqual(20);
+});
+```
+
+- [ ] **Step 4: Run it**
+
+Run: `cd frontend && npx playwright test smoke`
+Expected: PASS (harness boots backend+frontend, seeded chart renders). This task GATES the later E2E specs — they add `data-testid` hooks to components as they're built.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add frontend/playwright.config.ts frontend/e2e/ scripts/run_e2e.*
+git commit -m "test: playwright e2e harness with deterministic mock-llm backend"
+```
+
+Note for later component tasks: each UI component adds the `data-testid` hooks its E2E spec needs — `task-bar`, `task-bar-<id>`, `chat-input`, `tool-chip`, `task-modal`, `toolbar-import`, `toolbar-export`, `undo-btn`, `toast`.
+
 ---
 
 ## Phase 7: Gantt chart (the wow)
@@ -1184,12 +1230,29 @@ git commit -m "feat: gantt geometry helpers"
 
 - [ ] **Step 2: Wire into `App.tsx`** with a two-pane layout (chart left, chat right), load plan on mount.
 
-- [ ] **Step 3: Visual check with playwright-skill** — screenshot at 1440px and 390px; compare against approved mockup; confirm bars, arrows, today line render.
+- [ ] **Step 3: Add `data-testid` hooks** — each bar `data-testid="task-bar"` and `data-testid={"task-bar-"+id}`; today line `data-testid="today-line"`.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 4: E2E spec `e2e/gantt.spec.ts`** — extend the smoke coverage:
+
+```ts
+import { test, expect } from '@playwright/test';
+
+test('critical path bars are visually distinct', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('[data-testid="today-line"]')).toBeVisible();
+  const critical = page.locator('[data-testid="task-bar"][data-critical="true"]');
+  expect(await critical.count()).toBeGreaterThan(0);
+});
+```
+
+Run: `cd frontend && npx playwright test gantt` → PASS.
+
+- [ ] **Step 5: Screenshot review with playwright-skill** — capture 1440px and 390px, eyeball against the approved mockup (bars, bezier arrows, today line, monospace labels).
+
+- [ ] **Step 6: Commit**
 
 ```bash
-git add frontend/src/components/GanttChart.tsx frontend/src/App.tsx
+git add frontend/src/components/GanttChart.tsx frontend/src/App.tsx frontend/e2e/gantt.spec.ts
 git commit -m "feat: custom svg gantt chart with animated agent edits"
 ```
 
@@ -1200,12 +1263,13 @@ git commit -m "feat: custom svg gantt chart with animated agent edits"
 
 - [ ] **Step 1: Implement** pointer-drag on a bar to change its start (snap to day) and a right-edge handle to resize duration; on drop → optimistic store update + PATCH to `/api/plan` task; on API error → revert. (If time-constrained, `scope-hammer`: keep resize only, note drag-move as Roadmap item.)
 
-- [ ] **Step 2: Playwright check** — drag a bar, assert schedule recomputes.
+- [ ] **Step 2: E2E spec `e2e/drag.spec.ts`** — drag the right edge of a known bar by one day-width; assert its `end` date label (or bar width attribute) changed and a downstream bar shifted. Run: `npx playwright test drag` → PASS.
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git commit -am "feat: manual drag/resize on gantt bars"
+git add frontend/src/components/GanttChart.tsx frontend/e2e/drag.spec.ts
+git commit -m "feat: manual drag/resize on gantt bars"
 ```
 
 ---
@@ -1219,12 +1283,39 @@ git commit -am "feat: manual drag/resize on gantt bars"
 
 - [ ] **Step 1: Implement** — message list (user bubbles right, agent text left), tool-call chips rendered from `tool_call` events (`⚙ shift_tasks · <summary>`), input box, example-command hints, "Откатить" button calling `undo`. On submit → `streamChat`; each `patch` event → `applyPatch` (chart animates live); `error` event → inline red note. 
 
-- [ ] **Step 2: Playwright end-to-end** — type "перенеси задачи Олега на неделю", assert a bar shifts and a chip appears. (Uses mocked LLM via `ENV=test` seam or a canned backend response.)
+- [ ] **Step 2: Add `data-testid` hooks** — `chat-input`, `chat-send`, `tool-chip`, `undo-btn`, `chat-message`.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 3: E2E spec `e2e/chat.spec.ts`** (deterministic via MockLLM):
+
+```ts
+import { test, expect } from '@playwright/test';
+
+test('agent bulk-shift updates chart and shows a tool chip', async ({ page }) => {
+  await page.goto('/');
+  const oleg = page.locator('[data-testid="task-bar"][data-assignee="Олег"]').first();
+  const before = await oleg.getAttribute('data-end');
+  await page.getByTestId('chat-input').fill('перенеси задачи Олега на неделю');
+  await page.getByTestId('chat-send').click();
+  await expect(page.getByTestId('tool-chip')).toContainText('shift_tasks');
+  await expect.poll(async () => oleg.getAttribute('data-end')).not.toBe(before);
+});
+
+test('undo restores the plan', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('chat-input').fill('перенеси задачи Олега на неделю');
+  await page.getByTestId('chat-send').click();
+  await expect(page.getByTestId('tool-chip')).toBeVisible();
+  await page.getByTestId('undo-btn').click();
+  await expect(page.getByTestId('tool-chip')).toHaveCount(0);
+});
+```
+
+Run: `cd frontend && npx playwright test chat` → PASS.
+
+- [ ] **Step 4: Commit**
 
 ```bash
-git add frontend/src/components/ChatPanel.tsx
+git add frontend/src/components/ChatPanel.tsx frontend/e2e/chat.spec.ts
 git commit -m "feat: chat panel with live SSE agent edits"
 ```
 
@@ -1235,12 +1326,12 @@ git commit -m "feat: chat panel with live SSE agent edits"
 
 - [ ] **Step 1: Implement** — opens on bar click; shows name, description, assignee, computed start/end, duration, clickable predecessor chips (select that task), and a per-task "agent edit history" list (from chat log filtered by task id). Close on backdrop/Esc. Rendered in a portal to `<body>` (filipp.io gotcha: fixed children collapse backdrop-filter otherwise).
 
-- [ ] **Step 2: Playwright check** — click task → modal shows correct dates.
+- [ ] **Step 2: E2E spec `e2e/modal.spec.ts`** — click a bar, assert `task-modal` visible with the same start/end the bar carries in its `data-start`/`data-end`, and predecessor chips present; Esc closes. Run: `npx playwright test modal` → PASS.
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add frontend/src/components/TaskModal.tsx
+git add frontend/src/components/TaskModal.tsx frontend/e2e/modal.spec.ts
 git commit -m "feat: task detail modal"
 ```
 
@@ -1251,12 +1342,14 @@ git commit -m "feat: task detail modal"
 
 - [ ] **Step 1: Implement** — "Импорт Excel" (drag-n-drop + file picker → `importExcel` → `applyPatch`), "Экспорт" (`exportExcel` → download blob), "Сброс" (`resetPlan`). Import errors surface as a toast with the backend `detail` (row-level message).
 
-- [ ] **Step 2: Playwright check** — import `sample-data/plan.xlsx`, assert tasks load; export, assert file downloads.
+- [ ] **Step 2: Add `data-testid` hooks** — `toolbar-import` (file input), `toolbar-export`, `toolbar-reset`, `toast`.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 3: E2E spec `e2e/excel.spec.ts`** — import `sample-data/plan.xlsx` via `setInputFiles`, assert ≥20 bars; click export, assert a `.xlsx` download event fires; import a deliberately broken file (fixture `e2e/fixtures/broken.xlsx` with an unknown predecessor) and assert `toast` shows a "строка N" message. Run: `npx playwright test excel` → PASS.
+
+- [ ] **Step 4: Commit**
 
 ```bash
-git add frontend/src/components/Toolbar.tsx
+git add frontend/src/components/Toolbar.tsx frontend/e2e/excel.spec.ts frontend/e2e/fixtures/
 git commit -m "feat: toolbar with excel import/export/reset"
 ```
 
@@ -1278,6 +1371,54 @@ git commit -m "feat: toolbar with excel import/export/reset"
 ```bash
 git add scripts/gen_sample.py sample-data/plan.xlsx
 git commit -m "chore: generate sample excel from seed"
+```
+
+### Task 9.1b: Golden-path E2E (the ТЗ scenario, end to end)
+
+**Files:**
+- Create: `frontend/e2e/golden-path.spec.ts`
+
+- [ ] **Step 1: Write the full-scenario spec** — the exact deliverable scenario, one uninterrupted browser flow:
+
+```ts
+import { test, expect } from '@playwright/test';
+import path from 'node:path';
+
+test('import excel -> edit via chat -> export', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('toolbar-reset').click();
+
+  // 1. Import
+  await page.getByTestId('toolbar-import').setInputFiles(
+    path.resolve(__dirname, '../../sample-data/plan.xlsx'));
+  await expect(page.locator('[data-testid="task-bar"]')).toHaveCount(
+    await page.locator('[data-testid="task-bar"]').count());
+  expect(await page.locator('[data-testid="task-bar"]').count()).toBeGreaterThanOrEqual(20);
+
+  // 2. Edit via chat (deterministic MockLLM)
+  await page.getByTestId('chat-input').fill('перенеси задачи Олега на неделю');
+  await page.getByTestId('chat-send').click();
+  await expect(page.getByTestId('tool-chip')).toContainText('shift_tasks');
+
+  // 3. Export
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByTestId('toolbar-export').click(),
+  ]);
+  expect(download.suggestedFilename()).toMatch(/\.xlsx$/);
+});
+```
+
+- [ ] **Step 2: Run the entire E2E suite**
+
+Run: `cd frontend && npx playwright test`
+Expected: all specs green (smoke, gantt, drag, chat, modal, excel, golden-path).
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add frontend/e2e/golden-path.spec.ts
+git commit -m "test: golden-path e2e (import -> chat edit -> export)"
 ```
 
 ### Task 9.2: Neon + Vercel deploy
@@ -1311,6 +1452,7 @@ git commit -m "docs: readme, roadmap to production, demo"
 
 ## Self-Review notes
 
-- **Spec coverage:** models (1.1), scheduler+critical path+cycles (1.2–1.3), Excel round-trip+row errors (2.1–2.2), seed (3.1), all 8 tools incl. undo (3.2, 5.3), tool registry for agent+MCP (3.3), store+snapshot/undo (4.1), REST+export/import (4.2), agent+SSE+guardrails prompt (5.1–5.2), MCP server (5.3), design-system frontend (6–8), Gantt with animated edits (7), chat live edits (8.1), modal (8.2), toolbar (8.3), sample xlsx (9.1), Vercel+Neon (9.2), README/Roadmap/demo (9.3). All spec sections mapped.
-- **Known simplifications flagged for Roadmap:** `shift_tasks` semantics; MCP auth; prompt-level guardrails; single global plan.
-- **Type consistency:** `PlanPatch{plan, changed_ids}`, `Scheduled{id,start,end,is_critical}`, tool functions keyword-only, `dispatch(name,args,plan)`, SSE event types `tool_call|patch|message|error|done` — used consistently across backend tasks and mirrored in FE types (6.2).
+- **Spec coverage:** models (1.1), scheduler+critical path+cycles (1.2–1.3), Excel round-trip+row errors (2.1–2.2), seed (3.1), all 8 tools incl. undo (3.2, 5.3), tool registry for agent+MCP (3.3), store+snapshot/undo (4.1), REST+export/import (4.2), agent+SSE+guardrails prompt+MockLLM seam (5.1–5.2), MCP server (5.3), design-system frontend (6–8), Gantt with animated edits (7), chat live edits (8.1), modal (8.2), toolbar (8.3), sample xlsx (9.1), Vercel+Neon (9.2), README/Roadmap/demo (9.3). All spec sections mapped.
+- **Two test levels (both required by spec §10):** unit/pytest with red-green per backend task; Playwright **E2E** harness (6.3) then committed specs — smoke (6.3), gantt (7.2), drag (7.3), chat+undo (8.1), modal (8.2), excel incl. broken-file toast (8.3), and the full golden-path import→chat→export (9.1b). E2E determinism guaranteed by the `MOCK_LLM=1` backend seam defined in 5.1.
+- **Known simplifications flagged for Roadmap:** `shift_tasks` semantics; MCP auth; prompt-level guardrails; single global plan; CI wiring optional.
+- **Type consistency:** `PlanPatch{plan, changed_ids}`, `Scheduled{id,start,end,is_critical}`, tool functions keyword-only, `dispatch(name,args,plan)`, SSE event types `tool_call|patch|message|error|done` — used consistently across backend tasks and mirrored in FE types (6.2). E2E `data-testid`/`data-*` hooks (`task-bar`, `data-assignee`, `data-start/end`, `data-critical`, `chat-input`, `chat-send`, `tool-chip`, `undo-btn`, `task-modal`, `toolbar-import/export/reset`, `toast`) declared once in 6.3 and added by each component task.
