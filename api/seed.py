@@ -1,235 +1,75 @@
-"""Seed data: a realistic mobile app launch plan ("Запуск мобильного приложения")."""
+"""Seed data: a compact landing page launch plan ("Запуск лендинга").
+
+Kept deliberately small (7 tasks, 4 assignees) so the Gantt chart reads
+cleanly at a glance. Two join points (`frontend`, `qa`) each have two
+predecessors, giving a real critical path plus a couple of parallel
+branches (`design`/`backend` off `research`; `frontend`/`content` off
+`design`) rather than a single linear chain.
+"""
 from __future__ import annotations
 
 from api.models import Plan, Task
 
-_ASSIGNEES = ["Мария", "Иван", "Олег", "Анна", "Дмитрий"]
+_ASSIGNEES = ["Мария", "Иван", "Олег", "Анна"]
 
 
 def seed_plan() -> Plan:
     tasks = [
-        # --- Research & discovery ---
         Task(
-            id="research-market",
-            name="Исследование рынка",
-            description="Анализ рынка мобильных приложений и целевой аудитории",
-            assignee="Мария",
-            duration_days=5,
-            predecessors=[],
-        ),
-        Task(
-            id="research-competitors",
-            name="Анализ конкурентов",
-            description="Изучение конкурентных приложений и их фич",
+            id="research",
+            name="Исследование и бриф",
+            description="Сбор требований, анализ конкурентов, подготовка брифа на лендинг",
             assignee="Мария",
             duration_days=4,
             predecessors=[],
         ),
-        # --- Design ---
         Task(
-            id="design-concept",
-            name="Дизайн-концепция",
-            description="Формирование общей визуальной концепции продукта",
+            id="design",
+            name="Дизайн лендинга",
+            description="Визуальная концепция и макеты ключевых экранов",
             assignee="Анна",
             duration_days=5,
-            predecessors=["research-market", "research-competitors"],
+            predecessors=["research"],
         ),
         Task(
-            id="design-ui-kit",
-            name="UI-кит",
-            description="Создание библиотеки UI-компонентов",
-            assignee="Анна",
-            duration_days=6,
-            predecessors=["design-concept"],
-        ),
-        Task(
-            id="design-prototype",
-            name="Прототип",
-            description="Кликабельный прототип ключевых экранов",
-            assignee="Анна",
-            duration_days=5,
-            predecessors=["design-ui-kit"],
-        ),
-        Task(
-            id="design-onboarding",
-            name="Дизайн экранов онбординга",
-            description="Проработка экранов первого запуска приложения",
-            assignee="Анна",
-            duration_days=3,
-            predecessors=["design-prototype"],
-        ),
-        Task(
-            id="design-profile",
-            name="Дизайн экрана профиля",
-            description="Проработка экрана профиля пользователя",
-            assignee="Анна",
-            duration_days=3,
-            predecessors=["design-prototype"],
-        ),
-        # --- Backend ---
-        Task(
-            id="backend-architecture",
-            name="Архитектура backend",
-            description="Проектирование серверной архитектуры",
+            id="backend",
+            name="Backend и форма заявки",
+            description="API приёма заявок, интеграция с CRM",
             assignee="Иван",
             duration_days=6,
-            predecessors=["design-concept"],
+            predecessors=["research"],
         ),
         Task(
-            id="api-auth",
-            name="API авторизация",
-            description="Разработка API авторизации и аутентификации пользователей",
-            assignee="Иван",
-            duration_days=5,
-            predecessors=["backend-architecture"],
-        ),
-        Task(
-            id="api-payments",
-            name="API платежи",
-            description="Разработка API для обработки платежей",
-            assignee="Иван",
-            duration_days=6,
-            predecessors=["backend-architecture"],
-        ),
-        Task(
-            id="api-push",
-            name="API push-уведомлений",
-            description="Разработка API отправки push-уведомлений",
-            assignee="Дмитрий",
-            duration_days=4,
-            predecessors=["backend-architecture"],
-        ),
-        Task(
-            id="integration-payments",
-            name="Интеграция платежей",
-            description="Интеграция с внешним платёжным провайдером",
-            assignee="Иван",
-            duration_days=4,
-            predecessors=["api-payments"],
-        ),
-        Task(
-            id="integration-analytics",
-            name="Интеграция аналитики",
-            description="Подключение системы аналитики событий",
-            assignee="Дмитрий",
-            duration_days=3,
-            predecessors=["backend-architecture"],
-        ),
-        # --- Mobile clients ---
-        Task(
-            id="ios-client",
-            name="Разработка iOS-клиента",
-            description="Базовая разработка приложения под iOS",
-            assignee="Олег",
-            duration_days=10,
-            predecessors=["api-auth", "design-onboarding", "design-profile"],
-        ),
-        Task(
-            id="android-client",
-            name="Разработка Android-клиента",
-            description="Базовая разработка приложения под Android",
-            assignee="Дмитрий",
-            duration_days=10,
-            predecessors=["api-auth", "design-onboarding", "design-profile"],
-        ),
-        Task(
-            id="frontend-onboarding",
-            name="Экран онбординга (frontend)",
-            description="Реализация экрана онбординга в клиентском приложении",
-            assignee="Олег",
-            duration_days=3,
-            predecessors=["ios-client"],
-        ),
-        Task(
-            id="frontend-push",
-            name="Пуш-уведомления (frontend)",
-            description="Реализация приёма push-уведомлений в клиенте",
-            assignee="Дмитрий",
-            duration_days=3,
-            predecessors=["android-client", "api-push"],
-        ),
-        Task(
-            id="frontend-payments",
-            name="Оплата в приложении (frontend)",
-            description="Интеграция платёжного экрана в клиентское приложение",
-            assignee="Олег",
-            duration_days=4,
-            predecessors=["ios-client", "integration-payments"],
-        ),
-        # --- QA ---
-        Task(
-            id="unit-tests",
-            name="Unit-тесты",
-            description="Написание модульных тестов backend и клиентов",
-            assignee="Иван",
-            duration_days=4,
-            predecessors=["frontend-onboarding", "frontend-push"],
-        ),
-        Task(
-            id="qa-regress",
-            name="QA-регресс",
-            description="Полное регрессионное тестирование приложения",
+            id="content",
+            name="Тексты и контент",
+            description="Подготовка текстов, изображений и SEO-разметки по макетам",
             assignee="Мария",
-            duration_days=5,
-            predecessors=["unit-tests", "frontend-payments"],
+            duration_days=4,
+            predecessors=["design"],
         ),
         Task(
-            id="bugfixing",
-            name="Багфиксинг",
-            description="Исправление дефектов, найденных на QA",
+            id="frontend",
+            name="Вёрстка и интеграция",
+            description="Вёрстка страницы по дизайну и подключение к backend-API",
+            assignee="Олег",
+            duration_days=6,
+            predecessors=["design", "backend"],
+        ),
+        Task(
+            id="qa",
+            name="QA и тестирование",
+            description="Функциональное и кроссбраузерное тестирование перед запуском",
             assignee="Олег",
             duration_days=4,
-            predecessors=["qa-regress"],
+            predecessors=["frontend", "content"],
         ),
-        # --- Release ---
         Task(
-            id="store-prep",
-            name="Подготовка сторов",
-            description="Подготовка карточек и материалов для магазинов приложений",
+            id="launch",
+            name="Запуск и мониторинг",
+            description="Публикация лендинга и мониторинг метрик после запуска",
             assignee="Анна",
             duration_days=3,
-            predecessors=["bugfixing"],
-        ),
-        Task(
-            id="release-appstore",
-            name="Публикация в App Store",
-            description="Публикация релизной сборки в Apple App Store",
-            assignee="Олег",
-            duration_days=2,
-            predecessors=["store-prep"],
-        ),
-        Task(
-            id="release-googleplay",
-            name="Публикация в Google Play",
-            description="Публикация релизной сборки в Google Play",
-            assignee="Дмитрий",
-            duration_days=2,
-            predecessors=["store-prep"],
-        ),
-        # --- Marketing ---
-        Task(
-            id="marketing-materials",
-            name="Маркетинговые материалы",
-            description="Подготовка рекламных материалов к запуску",
-            assignee="Мария",
-            duration_days=5,
-            predecessors=["design-concept"],
-        ),
-        Task(
-            id="press-release",
-            name="Пресс-релиз",
-            description="Подготовка и рассылка пресс-релиза о запуске",
-            assignee="Мария",
-            duration_days=2,
-            predecessors=["marketing-materials"],
-        ),
-        Task(
-            id="post-release-monitoring",
-            name="Пострелизный мониторинг",
-            description="Мониторинг стабильности и метрик после релиза",
-            assignee="Дмитрий",
-            duration_days=5,
-            predecessors=["release-appstore", "release-googleplay", "press-release"],
+            predecessors=["qa"],
         ),
     ]
     return Plan(tasks=tasks, project_start="2026-05-05")

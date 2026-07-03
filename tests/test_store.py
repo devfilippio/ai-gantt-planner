@@ -6,7 +6,7 @@ def test_store_saves_and_loads():
     s = MemoryStore()
     s.reset_to_seed()
     plan = s.get_plan()
-    assert len(plan.tasks) >= 20
+    assert len(plan.tasks) >= 7
 
 
 def test_store_snapshot_and_undo():

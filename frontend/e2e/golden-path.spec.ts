@@ -18,12 +18,12 @@ test('golden path: import excel -> edit via chat -> export', async ({ page }) =>
   await page.goto('/');
   await page.getByTestId('toolbar-reset').click();
 
-  // 1. Import the sample plan (>= 20 tasks).
+  // 1. Import the sample plan (>= 7 tasks).
   await page.getByTestId('toolbar-import').setInputFiles(
     path.resolve(dirname, '../../sample-data/plan.xlsx'),
   );
   const bars = page.locator('[data-testid="task-bar"]');
-  await expect.poll(async () => bars.count()).toBeGreaterThanOrEqual(20);
+  await expect.poll(async () => bars.count()).toBeGreaterThanOrEqual(7);
 
   // 2. Edit the plan in bulk via the chat agent (deterministic MockLLM).
   await page.getByTestId('chat-input').fill('перенеси задачи Олега на неделю');

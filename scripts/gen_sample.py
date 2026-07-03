@@ -2,7 +2,7 @@
 
 Used by:
 - Excel import E2E specs (frontend/e2e/excel.spec.ts): imports this file to
-  assert >=20 bars render.
+  assert >=7 bars render.
 - The golden-path E2E (frontend/e2e/golden-path.spec.ts): import -> chat
   edit -> export, exercised end to end.
 

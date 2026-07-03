@@ -27,11 +27,10 @@ test('clicking a bar opens the modal with matching dates and predecessors', asyn
 test('modal shows predecessor chips for a dependent task', async ({ page }) => {
   await page.goto('/');
 
-  // `ios-client` (Разработка iOS-клиента) is seeded with three
-  // predecessors (api-auth, design-onboarding, design-profile) — a stable,
-  // known-dependent task to assert chip rendering against, rather than
-  // scanning bars at runtime.
-  const bar = page.locator('[data-testid="task-bar"][data-id="ios-client"]');
+  // `frontend` (Вёрстка и интеграция) is seeded with two predecessors
+  // (design, backend) — a stable, known-dependent task to assert chip
+  // rendering against, rather than scanning bars at runtime.
+  const bar = page.locator('[data-testid="task-bar"][data-id="frontend"]');
   await bar.scrollIntoViewIfNeeded();
   await bar.click();
 
@@ -39,7 +38,7 @@ test('modal shows predecessor chips for a dependent task', async ({ page }) => {
   await expect(modal).toBeVisible();
 
   const chips = page.getByTestId('pred-chip');
-  await expect(chips).toHaveCount(3);
+  await expect(chips).toHaveCount(2);
 
   await page.keyboard.press('Escape');
   await expect(modal).toHaveCount(0);

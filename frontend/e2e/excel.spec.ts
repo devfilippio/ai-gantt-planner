@@ -13,13 +13,13 @@ test.beforeEach(async ({ page }) => {
   await page.request.post('http://127.0.0.1:8000/api/reset');
 });
 
-test('import sample plan renders at least 20 bars', async ({ page }) => {
+test('import sample plan renders at least 7 bars', async ({ page }) => {
   await page.goto('/');
   await page.getByTestId('toolbar-import').setInputFiles(
     path.resolve(dirname, '../../sample-data/plan.xlsx'),
   );
   const bars = page.locator('[data-testid="task-bar"]');
-  await expect.poll(async () => bars.count()).toBeGreaterThanOrEqual(20);
+  await expect.poll(async () => bars.count()).toBeGreaterThanOrEqual(7);
 });
 
 test('export triggers an xlsx download', async ({ page }) => {

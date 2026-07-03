@@ -12,8 +12,8 @@ test('dragging a bar right edge resizes duration and shifts downstream tasks', a
   await page.request.post('http://127.0.0.1:8000/api/reset');
   await page.reload();
 
-  const sourceBar = page.locator('[data-testid="task-bar"][data-id="research-market"]');
-  const downstreamBar = page.locator('[data-testid="task-bar"][data-id="design-concept"]');
+  const sourceBar = page.locator('[data-testid="task-bar"][data-id="research"]');
+  const downstreamBar = page.locator('[data-testid="task-bar"][data-id="design"]');
 
   await expect(sourceBar).toBeVisible();
   await expect(downstreamBar).toBeVisible();

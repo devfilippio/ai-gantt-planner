@@ -25,7 +25,7 @@ test('demo: import excel -> edit via chat -> export', async ({ page }) => {
     path.resolve(dirname, '../../sample-data/plan.xlsx'),
   );
   const bars = page.locator('[data-testid="task-bar"]');
-  await expect.poll(async () => bars.count()).toBeGreaterThanOrEqual(20);
+  await expect.poll(async () => bars.count()).toBeGreaterThanOrEqual(7);
   await beat(1500); // hold on the imported Gantt chart
 
   // 2. Edit the plan in bulk via the chat agent.

@@ -9,7 +9,7 @@ def test_get_plan_returns_seed():
     assert r.status_code == 200
     r = client.get("/api/plan")
     body = r.json()
-    assert len(body["plan"]["tasks"]) >= 20
+    assert len(body["plan"]["tasks"]) >= 7
     assert len(body["schedule"]) == len(body["plan"]["tasks"])
 
 
@@ -23,7 +23,7 @@ def test_export_then_import_roundtrip():
              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
     r = client.post("/api/plan/import", files=files)
     assert r.status_code == 200
-    assert len(r.json()["plan"]["tasks"]) >= 20
+    assert len(r.json()["plan"]["tasks"]) >= 7
 
 
 def test_update_task_duration_persists_and_reschedules():
