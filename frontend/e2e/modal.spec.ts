@@ -43,3 +43,45 @@ test('modal shows predecessor chips for a dependent task', async ({ page }) => {
   await page.keyboard.press('Escape');
   await expect(modal).toHaveCount(0);
 });
+
+test('modal shows successor chips for a task with dependents', async ({ page }) => {
+  await page.goto('/');
+
+  // `frontend` (Вёрстка и интеграция) is a predecessor of `qa` (QA и
+  // тестирование) in the seed plan — a stable, known-dependency to assert
+  // the inverse ("Зависят от этой задачи") chip rendering against.
+  const bar = page.locator('[data-testid="task-bar"][data-id="frontend"]');
+  await bar.scrollIntoViewIfNeeded();
+  await bar.click();
+
+  const modal = page.getByTestId('task-modal');
+  await expect(modal).toBeVisible();
+
+  const succChips = page.getByTestId('succ-chip');
+  await expect(succChips).toHaveCount(1);
+  await expect(succChips.first()).toContainText('QA');
+
+  await page.keyboard.press('Escape');
+  await expect(modal).toHaveCount(0);
+});
+
+test('duration stepper resizes the task and shifts its bar', async ({ page }) => {
+  await page.goto('/');
+
+  const bar = page.locator('[data-testid="task-bar"][data-id="frontend"]');
+  await bar.scrollIntoViewIfNeeded();
+  await bar.click();
+
+  const modal = page.getByTestId('task-modal');
+  await expect(modal).toBeVisible();
+
+  const beforeEnd = await modal.getAttribute('data-end');
+
+  await page.getByTestId('duration-inc').click();
+
+  await expect.poll(() => modal.getAttribute('data-end')).not.toBe(beforeEnd);
+  await expect.poll(() => bar.getAttribute('data-end')).toBe(await modal.getAttribute('data-end'));
+
+  await page.keyboard.press('Escape');
+  await expect(modal).toHaveCount(0);
+});
