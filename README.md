@@ -1,108 +1,116 @@
 # AI Gantt Planner
 
-An AI-native project planning tool: a live, interactive Gantt chart that you edit in bulk by talking to it — "move Oleg's tasks a week later," "reassign Maria's work to Petr" — and the bars animate on screen as the agent applies the change. Import/export Excel, undo any agent edit, and the same mutation layer is exposed over MCP so any MCP-compatible client (Claude Desktop, Cursor, etc.) can drive the plan too.
+Диаграмма Гантта, которую редактируешь голосом. Пишешь в чат «перенеси задачи Олега на неделю позже» или «переназначь работу Марии на Петра» — агент применяет правку, и бары на экране переезжают на новое место. Можно импортировать и экспортировать Excel, откатить любое изменение агента. Тот же набор инструментов выставлен наружу по MCP — так что план можно двигать и из Claude Desktop, Cursor или любого другого MCP-клиента.
 
-**Live:** https://ai-gantt-planner-psi.vercel.app
+**Живое приложение:** https://ai-gantt-planner-psi.vercel.app
 
-![Demo: import Excel, edit via chat, export](docs/demo.gif)
+![Демо: импорт Excel, правка через чат, экспорт](docs/demo.gif)
 
-More screenshots: [`docs/shots/`](docs/shots/).
+Ещё скриншоты — в [`docs/shots/`](docs/shots/).
 
 ---
 
-## Quickstart
+## Быстрый старт
 
-### Backend (FastAPI)
+### Бэкенд (FastAPI)
 
 ```bash
 python -m venv .venv
 .venv/Scripts/pip install -r requirements.txt
-.venv/Scripts/pip install pytest httpx   # dev/test only
+.venv/Scripts/pip install pytest httpx   # только для тестов
 
-# deterministic mode (no LLM calls, no API key needed)
+# детерминированный режим: без обращений к LLM, ключ не нужен
 MOCK_LLM=1 .venv/Scripts/python -m uvicorn api.index:app --reload --port 8000
 ```
 
-> **Windows note:** `.python-version` declares `3.13`, but the checked-in `.venv` was built with the **Python 3.12** available on the dev machine (`.venv/Scripts/python --version` → `3.12.10`). Everything works on 3.12+; if you recreate the venv and have 3.13 installed, either is fine.
+> **Про Python на Windows.** В `.python-version` указан `3.13`, но закоммиченный `.venv` собран на `3.12`, который стоял на машине разработки (`.venv/Scripts/python --version` → `3.12.10`). Работает и там, и там. Пересоздашь venv на 3.13 — тоже нормально.
 
-Backend env vars (`.env`, gitignored):
+Переменные окружения бэкенда (`.env`, в git не попадает):
 
-| Var | Required | Purpose |
+| Переменная | Когда нужна | Зачем |
 |---|---|---|
-| `OPENROUTER_API_KEY` | for real chat | OpenRouter key for the LLM agent (`anthropic/claude-sonnet-4.5`, fallback `openai/gpt-4o`) |
-| `DATABASE_URL` | optional | Neon/Postgres connection string. Omit it and the app runs on an in-memory store (fine for local dev/demo; state resets on restart) |
-| `MOCK_LLM=1` | optional | Forces a deterministic keyword-matched fake LLM instead of a real API call — used by tests and E2E, also handy for local dev without spending tokens |
-| `ENV=test` | optional | Also switches to the mock LLM, and unlocks the test-only `/api/agent-test-mutation` route used by the undo test |
+| `OPENROUTER_API_KEY` | для настоящего чата | ключ OpenRouter для LLM-агента (`anthropic/claude-sonnet-4.5`, при ошибке — фолбэк на `openai/gpt-4o`) |
+| `DATABASE_URL` | опционально | строка подключения к Neon/Postgres. Не задашь — приложение работает на in-memory хранилище (для локальной разработки и демо годится; при рестарте состояние сбрасывается) |
+| `MOCK_LLM=1` | опционально | вместо реального вызова API включает детерминированную заглушку, которая матчит команду по ключевым словам. Используется в тестах и E2E, удобна для локальной работы без трат на токены |
+| `ENV=test` | опционально | тоже переключает на заглушку LLM и открывает тестовый роут `/api/agent-test-mutation`, который нужен тесту на undo |
 
-### Frontend (Vite + React + TS)
+### Фронтенд (Vite + React + TS)
 
 ```bash
 cd frontend
 npm install
-npm run dev       # http://localhost:5173, proxies /api to :8000
+npm run dev       # http://localhost:5173, проксирует /api на :8000
 ```
 
-Point the frontend at a non-default backend with `VITE_API_BASE` (used by the Playwright harness to hit `127.0.0.1:8000` directly against the preview build).
+Указать фронтенду другой адрес бэкенда можно через `VITE_API_BASE` — так делает Playwright, чтобы бить напрямую в `127.0.0.1:8000` против собранной preview-версии.
 
 ---
 
-## Architecture
+## Архитектура
 
-Monorepo, single Vercel project, one deployed URL. The SPA and the API are both served from the same domain — the SPA calls `/api/*`, Vercel rewrites those to the single FastAPI ASGI app in `api/index.py`.
+Монорепо, один проект на Vercel, один URL. SPA и API живут на одном домене: фронт зовёт `/api/*`, Vercel переписывает эти запросы на единственное FastAPI-приложение в `api/index.py`.
 
 ```
                          ┌────────────────────────────┐
-                         │        Vercel (1 project)   │
+                         │        Vercel (1 проект)    │
                          │                              │
-   Browser  ── /  ──────▶│  Vite SPA (frontend/dist)   │
+   Браузер ── /  ───────▶│  Vite SPA (frontend/dist)   │
                          │                              │
-   Browser  ── /api/* ──▶│  api/index.py (FastAPI)      │
+   Браузер ── /api/* ───▶│  api/index.py (FastAPI)      │
                          │        │                      │
                          │        ▼                      │
-                         │   api/tools.py  (single       │
-                         │   plan-mutation tool layer)   │
+                         │   api/tools.py  (единый       │
+                         │   слой мутаций плана)         │
                          │     │              │           │
                          │     ▼              ▼           │
-                         │  internal agent   MCP server   │
-                         │  (SSE /api/chat)  (/api/mcp)    │
+                         │  внутренний агент  MCP-сервер  │
+                         │  (SSE /api/chat)  (/api/mcp)   │
                          │     │                            │
                          │     ▼                            │
                          │  api/store.py → Neon Postgres    │
-                         │  (or in-memory for local dev)    │
+                         │  (или in-memory для локалки)     │
                          └────────────────────────────┘
 ```
 
-- **`api/scheduler.py`** — pure function `compute_schedule(plan)`. Dates are **never stored**; every task has only a `duration_days` and `predecessors`, and start/end are computed on every read via topological sort (`start = max(end of predecessors)`, `end = start + duration`). Cycles raise `CycleError`; the critical path is flagged by walking backward from the tasks that end at the project's latest date.
-- **`api/tools.py`** — the one place plan mutations happen: `add_task`, `update_task`, `delete_task`, `set_dependencies`, `reassign_tasks`, `shift_tasks`. Pure functions: `Plan` in, `PlanPatch` (`{plan, changed_ids}`) out, validated (no dangling predecessors, no cycles) before returning.
-- **`api/tool_registry.py`** — OpenAI-style JSON-schema wrappers around the tools above, plus `dispatch(name, args, plan)`. This registry is consumed by **both** the internal agent and the MCP server, so there is exactly one definition of what a "tool" does — no drift between the two integration surfaces.
-- **`api/agent.py`** — the chat agent's tool-calling loop (`run_agent_turn`). Streams `tool_call` → `patch` → `message` → `done` events. LLM access is behind a tiny `LLM` protocol with three implementations: `OpenRouterLLM` (real, `anthropic/claude-sonnet-4.5` → falls back to `openai/gpt-4o` on error), `MockLLM` (deterministic keyword matcher), and `default_llm()` which picks `MockLLM` whenever `MOCK_LLM=1` or `ENV=test`.
-- **`api/mcp_server.py`** — a real MCP server (official `mcp` Python SDK, `FastMCP`, streamable-HTTP transport, `stateless_http=True`), mounted as an ASGI sub-app at `/api/mcp`. Stateless because Vercel serverless functions don't guarantee two requests land on the same instance — there is no server-side MCP session to keep alive between calls.
-- **`api/store.py`** — a `Store` protocol with two implementations: `MemoryStore` (dict + snapshot list, used in tests and default local dev) and `PostgresStore` (Neon, via `psycopg`, JSONB columns for plan state + snapshot history). `get_store()` picks Postgres when `DATABASE_URL` is set, else memory. Undo is a snapshot stack: every mutating request snapshots the plan before applying the first change, and `POST /api/undo` pops the latest snapshot back into place.
-- **Frontend** — Vite + React 19 + TypeScript + Zustand. The Gantt chart is hand-built SVG (no charting library): a left column of task/assignee rows and a right SVG pane with a week grid, a dashed "today" line, dependency bezier arrows, and bars that animate (CSS transition on `x`/`width`) whenever their id appears in an SSE `patch` event's `changed_ids`, with a fading emerald highlight.
+**`api/scheduler.py`** — чистая функция `compute_schedule(plan)`. Даты нигде не хранятся. У задачи есть только `duration_days`, `predecessors` и `lead_days` (сколько календарных дней подождать перед стартом — так независимая задача может начаться с конкретной даты, а не всегда от старта проекта). Начало и конец считаются заново при каждом чтении через топологическую сортировку: `start = max(конец предшественников) + lead_days`, `end = start + duration`. Цикл в зависимостях бросает `CycleError`. Критический путь находим, идя назад от задач, которые заканчиваются в самую позднюю дату проекта.
 
-### Key decisions
+**`api/tools.py`** — единственное место, где план меняется: `add_task`, `update_task`, `delete_task`, `set_dependencies`, `reassign_tasks`, `shift_tasks`. Это чистые функции: на вход `Plan`, на выход `PlanPatch` (`{plan, changed_ids}`). Перед возвратом всё проверяется — нет висящих предшественников, нет циклов.
 
-- **Custom SVG Gantt, not a charting library.** Full control over the "bars glide to their new position while a chip appears in chat" moment — the actual point of the product — which off-the-shelf Gantt components don't animate the way this needed.
-- **Computed dates, not stored dates.** A task only has a duration and predecessors; start/end are derived. This makes every mutation (reassign, shift, add, delete) trivially consistent — there is no "recompute the whole schedule and hope nothing drifted" step, because nothing is ever stored that could drift.
-- **One tool layer for both surfaces.** `api/tools.py` + `api/tool_registry.py` are consumed identically by the chat agent and by the MCP server. Adding a new capability means writing one function once; both an end-user chatting in the UI and a developer's MCP client (Claude Desktop, Cursor, etc.) get it automatically and with the same validation.
-- **SSE, not WebSocket.** Vercel's serverless Python runtime supports streaming HTTP responses; it does not give you a persistent bidirectional socket. `POST /api/chat` streams newline-delimited SSE events, which is exactly the shape this needs (server → client only, one request per chat turn) and deploys without extra infrastructure.
-- **A deterministic `MockLLM` seam.** `default_llm()` swaps in a keyword-matching fake whenever `MOCK_LLM=1` or `ENV=test`. Every unit test and every Playwright E2E spec (including the golden path and the recorded demo) runs against this — no flakiness from a real model's non-determinism, no API spend for CI, and the same code path the real `OpenRouterLLM` runs through end to end.
+**`api/tool_registry.py`** — JSON-schema обёртки в стиле OpenAI над этими функциями плюс `dispatch(name, args, plan)`. Реестр используют оба потребителя: и внутренний агент, и MCP-сервер. Так что «что делает инструмент» описано ровно один раз, и две точки интеграции не разъезжаются.
+
+**`api/agent.py`** — цикл tool-calling чат-агента (`run_agent_turn`). Стримит события `tool_call` → `patch` → `message` → `done`. У агента есть память диалога: прошлые реплики (`history`) сворачиваются в сообщения LLM перед новым запросом, поэтому агент не переспрашивает то, на что пользователь уже ответил. Есть инструмент `undo_last_turn` — по фразе «отмени» / «откати правку» агент откатывает план к состоянию до последней мутации. Системный промпт устойчив к произвольному вводу: любая задача, которую просят добавить, считается легитимной («купить молоко» — валидная задача); переспрашивает агент только при настоящей неоднозначности или когда просьба субъективна («сделай план красивее») и не даёт критерия для конкретной мутации. Доступ к модели спрятан за маленьким протоколом `LLM` с тремя реализациями: `OpenRouterLLM` (настоящий, `anthropic/claude-sonnet-4.5` с фолбэком на `openai/gpt-4o`), `MockLLM` (детерминированный матч по ключевым словам) и `default_llm()`, который выбирает `MockLLM`, когда стоит `MOCK_LLM=1` или `ENV=test`.
+
+**`api/mcp_server.py`** — настоящий MCP-сервер (официальный SDK `mcp`, `FastMCP`, транспорт streamable-HTTP, `stateless_http=True`), примонтированный как ASGI-подприложение на `/api/mcp`. Stateless — потому что serverless-функции Vercel не гарантируют, что два запроса попадут на один инстанс, а значит держать серверную MCP-сессию между вызовами не на чем.
+
+**`api/store.py`** — протокол `Store` с двумя реализациями: `MemoryStore` (словарь плюс список снапшотов, используется в тестах и по умолчанию локально) и `PostgresStore` (Neon через `psycopg`, JSONB-колонки под состояние плана и историю снапшотов). `get_store()` берёт Postgres, если задан `DATABASE_URL`, иначе память. Undo — это стек снапшотов: каждый меняющий запрос снимает снапшот плана перед первым изменением, а `POST /api/undo` возвращает последний снапшот на место.
+
+**Фронтенд** — Vite + React 19 + TypeScript + Zustand. Диаграмма Гантта нарисована руками на SVG, без чартовых библиотек: слева колонка со строками задач и исполнителями, справа SVG-панель с недельной сеткой, пунктирной линией «сегодня», безье-стрелками зависимостей и барами. Бар анимируется (CSS-переход по `x`/`width`), когда его id прилетает в `changed_ids` события `patch` по SSE, — и на пару секунд подсвечивается затухающим зелёным.
+
+---
+
+## Ключевые решения
+
+- **Кастомный SVG-Гантт, а не библиотека.** Главный момент продукта — «бары плавно переезжают на новое место, пока в чате появляется чип с правкой». Готовые Gantt-компоненты анимируют не так, как здесь нужно, поэтому полный контроль над отрисовкой важнее готовой обвязки.
+- **Даты считаются, а не хранятся.** У задачи есть только длительность и предшественники — начало и конец выводятся. Из-за этого любая мутация (перенос, переназначение, добавление, удаление) остаётся согласованной сама собой: нет отдельного шага «пересчитать всё расписание и надеяться, что ничего не поехало», потому что хранить нечего, чему ехать.
+- **Один слой инструментов на обе точки.** `api/tools.py` + `api/tool_registry.py` одинаково используют и чат-агент, и MCP-сервер. Новая возможность — это одна функция, написанная один раз; и пользователь в чате, и разработчик из своего MCP-клиента получают её сразу, с одинаковой валидацией.
+- **SSE, а не WebSocket.** Serverless-рантайм Python на Vercel умеет стримить HTTP-ответ, но не даёт постоянный двусторонний сокет. `POST /api/chat` стримит SSE-события построчно — ровно та форма, что здесь нужна (сервер → клиент, один запрос на ход чата), и деплоится без лишней инфраструктуры.
+- **Шов с детерминированным `MockLLM`.** `default_llm()` подставляет заглушку, когда стоит `MOCK_LLM=1` или `ENV=test`. Против неё гоняются все юнит-тесты и все Playwright-спеки (включая golden path и записанное демо): никакой флакости от недетерминированной модели, никаких трат на токены в CI, и при этом тот же самый код-путь, что проходит настоящий `OpenRouterLLM`.
 
 ---
 
 ## MCP
 
-The plan-mutation tools are exposed as a standards-compliant MCP server (streamable-HTTP transport) at:
+Инструменты мутации плана выставлены как стандартный MCP-сервер (транспорт streamable-HTTP) по адресу:
 
 ```
-/api/mcp/          ← note the trailing slash; FastMCP mounts at exactly this path
+/api/mcp/          ← слэш в конце обязателен, FastMCP монтируется ровно на этот путь
 ```
 
-Exposed tools: `get_plan`, `add_task`, `update_task`, `delete_task`, `set_dependencies`, `reassign_tasks`, `shift_tasks`. Each mutating tool loads the current plan from the shared store, applies the change through the same validated `api/tools.py` functions the chat agent uses, persists the result, and returns a short text summary (changed task ids + total task count). Validation errors (bad id, dependency cycle, etc.) come back as a normal tool result (`"Ошибка: ..."`) rather than a crash.
+Выставлены: `get_plan`, `add_task`, `update_task`, `delete_task`, `set_dependencies`, `reassign_tasks`, `shift_tasks`. Каждый меняющий инструмент грузит текущий план из общего хранилища, применяет изменение через те же проверенные функции `api/tools.py`, что и чат-агент, сохраняет результат и возвращает короткую сводку (id изменённых задач и общее число задач). Ошибка валидации (несуществующий id, цикл зависимостей и т.п.) возвращается обычным результатом инструмента (`"Ошибка: ..."`), а не падением.
 
-### Connecting a client
+### Как подключить клиент
 
-Local dev:
+Локально:
 
 ```json
 {
@@ -114,7 +122,7 @@ Local dev:
 }
 ```
 
-Against the deployed app (Claude Desktop, `claude_desktop_config.json`, or any MCP client that speaks streamable-HTTP):
+К задеплоенному приложению (Claude Desktop, `claude_desktop_config.json`, или любой MCP-клиент со streamable-HTTP):
 
 ```json
 {
@@ -126,82 +134,98 @@ Against the deployed app (Claude Desktop, `claude_desktop_config.json`, or any M
 }
 ```
 
-The server is **stateless** by design (`stateless_http=True`) — no session affinity is required between requests, which matches how Vercel serverless functions are invoked. See [`docs/roadmap-to-production.md`](docs/roadmap-to-production.md) for the known gap that this endpoint is currently unauthenticated.
+Сервер намеренно stateless (`stateless_http=True`): между запросами не нужна привязка к сессии — это совпадает с тем, как Vercel вызывает serverless-функции. Известная дыра — эндпоинт пока без аутентификации; см. [`docs/roadmap-to-production.md`](docs/roadmap-to-production.md).
 
 ---
 
-## Testing
+## Тестирование
 
-**Unit tests (pytest, 55 tests)** — models, scheduler (date computation, cycle detection, critical path), Excel import/export round-trip with row-level error messages, seed data, tools, tool registry, store (memory), REST endpoints, the agent loop (with a fake LLM), the SSE chat endpoint, undo, and the MCP tool dispatch:
+**Юнит-тесты (pytest, 60 штук)** — модели, планировщик (расчёт дат, детекция циклов, критический путь), Excel-импорт/экспорт с сообщениями об ошибке по номеру строки, сид-данные, инструменты, реестр инструментов, хранилище (memory), REST-эндпоинты, цикл агента (с фейковым LLM), SSE-эндпоинт чата, undo и диспетчеризация MCP-инструментов:
 
 ```bash
 ENV=test MOCK_LLM=1 .venv/Scripts/python -m pytest -q
 ```
 
-**End-to-end (Playwright, desktop + mobile viewports)** — boots the real FastAPI backend with `MOCK_LLM=1` and the built frontend, then drives a real browser against both:
+**End-to-end (Playwright, desktop + mobile)** — поднимает настоящий FastAPI-бэкенд с `MOCK_LLM=1` и собранный фронтенд, потом гоняет реальный браузер против обоих. На desktop это 14 тест-кейсов:
 
 ```bash
 cd frontend
 npx playwright test --project=desktop
 ```
 
-Specs:
+Спеки:
 
-| Spec | Covers |
+| Спек | Что проверяет |
 |---|---|
-| `smoke.spec.ts` | App loads, seeded plan renders ≥20 bars |
-| `gantt.spec.ts` | Critical-path bars are visually distinct, today-line renders |
-| `drag.spec.ts` | Dragging a bar's right edge resizes duration and shifts downstream tasks |
-| `chat.spec.ts` | Chat agent bulk-edits the plan live and shows a tool-call chip; undo reverts it |
-| `modal.spec.ts` | Task detail modal shows matching dates and predecessor chips |
-| `excel.spec.ts` | Import renders ≥20 bars, export triggers an `.xlsx` download, a broken file surfaces a row-level toast |
-| **`golden-path.spec.ts`** | The full deliverable scenario in one uninterrupted flow: reset → import → chat edit → export |
-| `demo.spec.ts` | Same scenario, slowed down deliberately and recorded on video (see [Demo](#demo)) |
+| `smoke.spec.ts` | приложение грузится, сид-план рисует ≥20 баров |
+| `gantt.spec.ts` | бары критического пути визуально отличаются, линия «сегодня» на месте |
+| `drag.spec.ts` | тянешь правый край бара — меняется длительность и сдвигаются задачи ниже по цепочке |
+| `chat.spec.ts` | агент массово правит план вживую и показывает чип с tool-call; undo откатывает |
+| `modal.spec.ts` | модалка задачи показывает совпадающие даты и чипы предшественников |
+| `excel.spec.ts` | импорт рисует ≥20 баров, экспорт скачивает `.xlsx`, битый файл даёт тост с номером строки |
+| **`golden-path.spec.ts`** | весь сценарий сдачи в один непрерывный проход: сброс → импорт → правка через чат → экспорт |
+| `demo.spec.ts` | тот же сценарий, специально замедленный и записанный на видео (см. [Демо](#демо)) |
 
-Both viewport projects (`desktop` 1440×900, `mobile` 390×844) exist in `frontend/playwright.config.ts`; a third project, `demo-recording`, only matches `demo.spec.ts` and turns video recording on.
+Оба viewport-проекта (`desktop` 1440×900, `mobile` 390×844) заданы в `frontend/playwright.config.ts`. Третий проект, `demo-recording`, матчит только `demo.spec.ts` и включает запись видео.
 
-**Determinism note:** every E2E spec runs against the backend started with `MOCK_LLM=1`. `MockLLM` keyword-matches the chat message (e.g. "Олег" + "недел" → `shift_tasks(assignee="Олег", days=7)`) instead of calling a real model, so results are exactly reproducible run to run — no network flakiness, no token spend, no risk of a model changing its mind about which tool to call between CI runs.
+**Про детерминизм.** Каждый E2E-спек гоняется против бэкенда, поднятого с `MOCK_LLM=1`. `MockLLM` матчит команду по ключевым словам (например, «Олег» + «недел» → `shift_tasks(assignee="Олег", days=7)`) вместо вызова настоящей модели, поэтому результат воспроизводится один в один от прогона к прогону — без сетевой флакости, без трат на токены и без риска, что модель между прогонами передумает, какой инструмент звать.
+
+**Хаос-тесты.** `scripts/chaos_chat.py` — отдельная батарея произвольных и намеренно вредных команд («сделай план красивее», «удали все задачи», «какая погода в Москве?», гибрид, галиматья), прогоняемая через **настоящий** цикл агента с `OpenRouterLLM` (не MockLLM) против свежего сид-плана. Так мы смотрим на поведение реальной модели, не трогая прод: ловим выдуманные изменения, тихие no-op'ы, зацикливания и падения до того, как они дойдут до пользователя.
+
+```bash
+set -a && . ./.env && set +a
+PYTHONIOENCODING=utf-8 .venv/Scripts/python scripts/chaos_chat.py       # вся батарея
+PYTHONIOENCODING=utf-8 .venv/Scripts/python scripts/chaos_chat.py 5 13  # отдельные пункты
+```
 
 ---
 
-## Demo
+## Демо
 
-![Demo gif](docs/demo.gif)
+![Демо-gif](docs/demo.gif)
 
-Recorded via a scripted Playwright spec (`frontend/e2e/demo.spec.ts`) against the real app with the deterministic `MockLLM` backend, converted from the captured `.webm` with:
+Записано скриптовым Playwright-спеком (`frontend/e2e/demo.spec.ts`) против настоящего приложения с детерминированным `MockLLM`-бэкендом. Захваченный `.webm` конвертируется в gif так:
 
 ```bash
 ffmpeg -i video.webm -vf "fps=12,scale=1000:-1:flags=lanczos" docs/demo.gif
 ```
 
-Static screenshots are in [`docs/shots/`](docs/shots/) (seeded Gantt chart, a live chat-driven edit).
+Статичные скриншоты — в [`docs/shots/`](docs/shots/) (сид-Гантт, живая правка через чат).
 
 ---
 
-## How we used AI assistants
+## Как мы использовали AI-ассистентов
 
-This project was built end-to-end with **Claude Code**, using a skills-driven workflow rather than one long unstructured chat:
+Проект от и до собран в **Claude Code** (модели Opus и Sonnet) с оркестрацией субагентов. Не один длинный сумбурный чат, а чёткая последовательность фаз — и она видна в истории коммитов и в артефактах под `docs/superpowers/`.
 
-1. **Brainstorming** — the product shape (Gantt + chat agent + Excel + MCP, Vercel-deployed) was explored and locked down before any code, including the visual direction (a dark, editorial, filipp.io-inspired aesthetic) and the approved mockup layout.
-2. **Spec → plan** — the brainstormed decisions were turned into a written design spec, then a detailed, phase-by-phase implementation plan (`docs/superpowers/plans/2026-07-03-ai-gantt-planner.md`) with explicit red/green TDD steps for every backend module and E2E coverage requirements for every frontend component, before implementation started.
-3. **Subagent-driven TDD execution** — the plan was executed task by task: write a failing test, run it, implement the minimal code to pass, run it again, commit. This applies to every backend module (scheduler, Excel import/export, tools, tool registry, store, agent, endpoints) and is why the commit history reads as small, reviewable, test-then-implementation steps.
-4. **Design skills for the frontend** — UI work went through `frontend-design`, then a dedicated polish/audit pass (`impeccable`) and a motion-specific review (`design-motion`) to catch generic "AI-slop" patterns and make sure the agent-edit animation (the actual wow-moment of the product) reads as intentional, not accidental.
-5. **Playwright verification, not eyeballing** — every interactive behavior (drag-resize, chat-driven bulk edits, undo, import/export, modal) has a Playwright spec that runs against the real backend and a real (Chromium) browser, not just unit tests of isolated logic. The golden-path and demo specs additionally exercise the exact end-to-end scenario a reviewer would run by hand.
-6. **Phase-by-phase self-review** — each phase of the plan ends with running the full test suite (unit + E2E) before moving on, and the plan document itself carries a "Self-Review notes" section mapping every spec requirement to the task that implements it, so nothing from the original ask silently fell off scope.
+1. **Brainstorming.** Форму продукта (Гантт + чат-агент + Excel + MCP на Vercel) обсудили и зафиксировали до кода — вместе с визуальным направлением (тёмная editorial-эстетика в духе filipp.io) и согласованным мокапом.
 
-In short: Claude Code did the typing, but the sequencing — decide, spec, plan, test-first implement, design-review, verify — was deliberate and is visible in both the git history and the `docs/superpowers/` artifacts checked into this repo.
+2. **Спека → план.** Решения из брейншторма превратились в письменную дизайн-спеку, потом — в подробный пофазовый план имплементации (`docs/superpowers/plans/2026-07-03-ai-gantt-planner.md`) с явными red/green-шагами TDD для каждого модуля бэкенда и требованиями к E2E-покрытию каждого фронтового компонента. Всё это — до первой строчки кода.
+
+3. **Исполнение субагентами по TDD.** План шёл задача за задачей: свежий субагент пишет падающий тест, гоняет его, пишет минимальный код, чтобы прошёл, гоняет снова, коммитит. Каждую фазу проверял отдельный, независимый субагент — тот, кто писал код, и тот, кто его проверял, разные. Поэтому история коммитов читается как мелкие обозримые шаги «сначала тест, потом реализация».
+
+4. **Дизайн-скиллы на фронтенде.** UI прошёл через `frontend-design`, потом через отдельный проход полировки и аудита (`impeccable`) и через ревью анимаций (`design-motion`) — чтобы выловить типовой «AI-slop» и чтобы анимация правки агента (собственно, вау-момент продукта) читалась как задуманная, а не случайная. Заодно субагенты изучали чужие Gantt-библиотеки — не чтобы их подключить, а чтобы подсмотреть удачные визуальные практики.
+
+5. **Верификация через Playwright, а не на глаз.** Под каждое интерактивное поведение (drag-resize, массовые правки через чат, undo, импорт/экспорт, модалка) есть Playwright-спек против настоящего бэкенда в реальном браузере — не только юнит-тесты изолированной логики. Каждое изменение проверялось прогоном. Спеки golden-path и demo дополнительно проходят ровно тот сквозной сценарий, который проверяющий стал бы кликать руками.
+
+6. **Хаос-тестирование агента против живой модели.** `scripts/chaos_chat.py` гонял батарею произвольных команд через настоящий OpenRouter, чтобы убедиться: что бы клиент ни ввёл, ответ разумный — без выдуманных правок, зацикливаний и падений.
+
+7. **Code-review перед деплоем.** Весь проект прошёл ревью целиком до выкатки на прод.
+
+Коротко: печатал Claude Code, но последовательность — реши, специфицируй, распланируй, реализуй тестами вперёд, отревьюй дизайн, проверь — была осознанной, и её видно и в git-истории, и в закоммиченных артефактах `docs/superpowers/`.
 
 ---
 
-## Repo layout
+## Структура репозитория
 
 ```
-api/            FastAPI backend (models, scheduler, excel, tools, agent, store, mcp_server, index)
-frontend/       Vite + React + TS SPA, Playwright E2E specs under frontend/e2e/
-tests/          pytest suite (mirrors api/ modules)
-sample-data/    plan.xlsx — a ready-to-import 27-task sample plan (generated by scripts/gen_sample.py)
-docs/           roadmap-to-production.md, demo.gif, screenshots, planning artifacts
-vercel.json     single-project routing: /api/* -> api/index.py, everything else -> the SPA
+api/            бэкенд на FastAPI (models, scheduler, excel, tools, agent, store, mcp_server, index)
+frontend/       SPA на Vite + React + TS, Playwright-спеки в frontend/e2e/
+tests/          набор pytest (зеркалит модули api/)
+sample-data/    plan.xlsx — готовый к импорту план на 27 задач (генерится scripts/gen_sample.py)
+scripts/        gen_sample.py, chaos_chat.py (хаос-батарея против живой модели), gen_broken_fixture.py
+docs/           roadmap-to-production.md, demo.gif, скриншоты, артефакты планирования
+vercel.json     роутинг одного проекта: /api/* -> api/index.py, всё остальное -> SPA
 ```
 
-See [`docs/roadmap-to-production.md`](docs/roadmap-to-production.md) for known gaps, intentional shortcuts, and the order they'd get closed in before a real production launch.
+Известные дыры, сознательные срезы углов и порядок, в котором их закрывали бы перед настоящим продакшеном, — в [`docs/roadmap-to-production.md`](docs/roadmap-to-production.md).
