@@ -2,9 +2,30 @@ import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { usePlanStore } from '../store/planStore';
 import { streamChat } from '../api/client';
+import type { ChatHistoryTurn } from '../api/client';
 import { summarizeToolCall } from '../lib/toolSummary';
 import type { AgentEvent } from '../types';
+import type { ChatMessage } from '../store/planStore';
 import './ChatPanel.css';
+
+const HISTORY_CAP = 20;
+
+/** Builds the {role, text} history the backend needs for conversation memory
+ * from the chat log kept in the store. Only user/agent turns carry
+ * conversational content the model should remember — tool-call chips and
+ * error messages are UI-only and excluded. Capped to the most recent
+ * HISTORY_CAP entries (mirrors api/agent.py's own cap). */
+function historyFromChatLog(chatLog: ChatMessage[]): ChatHistoryTurn[] {
+  const turns: ChatHistoryTurn[] = [];
+  for (const msg of chatLog) {
+    if (msg.role === 'user') {
+      turns.push({ role: 'user', text: msg.text });
+    } else if (msg.role === 'agent') {
+      turns.push({ role: 'agent', text: msg.text });
+    }
+  }
+  return turns.slice(-HISTORY_CAP);
+}
 
 const EXAMPLE_COMMANDS = [
   'перенеси задачи Олега на неделю',
@@ -44,6 +65,11 @@ export function ChatPanel() {
     if (!text || busy) return;
     setInput('');
     setBusy(true);
+    // Snapshot history BEFORE pushing the new user message — the backend
+    // appends `message` itself as the final user turn, so history must only
+    // contain turns strictly prior to it (otherwise the latest message would
+    // be duplicated in the LLM's message list).
+    const history = historyFromChatLog(chatLog);
     pushChat({ role: 'user', text });
 
     try {
@@ -62,7 +88,7 @@ export function ChatPanel() {
         } else if (event.type === 'error') {
           pushChat({ role: 'error', text: event.detail });
         }
-      });
+      }, history);
     } catch (err) {
       pushChat({ role: 'error', text: (err as Error).message });
     } finally {

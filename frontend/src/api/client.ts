@@ -76,14 +76,20 @@ export async function updateTask(
   return handleJson<PlanAndSchedule>(res);
 }
 
+export interface ChatHistoryTurn {
+  role: 'user' | 'agent';
+  text: string;
+}
+
 export async function streamChat(
   message: string,
   onEvent: (event: AgentEvent) => void,
+  history: ChatHistoryTurn[] = [],
 ): Promise<void> {
   const res = await fetch(`${API_BASE}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ message, history }),
   });
 
   if (!res.ok || !res.body) {
