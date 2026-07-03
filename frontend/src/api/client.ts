@@ -27,7 +27,21 @@ export async function importExcel(file: File): Promise<PlanAndSchedule> {
     method: 'POST',
     body: formData,
   });
-  return handleJson<PlanAndSchedule>(res);
+  if (!res.ok) {
+    // FastAPI's HTTPException body is `{"detail": "строка N: ..."}` — surface
+    // that row-level message directly rather than the generic "Request
+    // failed: 400 ..." text so the toast can show the actual validation
+    // error the backend produced.
+    let detail = `Request failed: ${res.status}`;
+    try {
+      const body = (await res.json()) as { detail?: string };
+      if (body?.detail) detail = body.detail;
+    } catch {
+      // Body wasn't JSON — fall back to the generic message.
+    }
+    throw new Error(detail);
+  }
+  return res.json() as Promise<PlanAndSchedule>;
 }
 
 export async function exportExcel(): Promise<Blob> {

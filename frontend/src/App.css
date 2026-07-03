@@ -15,18 +15,14 @@
 .app-shell__chat {
   position: sticky;
   top: 28px;
+  display: flex;
   min-height: 480px;
+  max-height: calc(100svh - 56px);
   border: 1px solid var(--line);
   border-radius: 6px;
   background: var(--surface-1);
   padding: 14px 18px;
-}
-
-.app-shell__chat-label {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  letter-spacing: 0.08em;
-  color: var(--text-dim);
+  box-sizing: border-box;
 }
 
 @media (max-width: 860px) {
