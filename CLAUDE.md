@@ -74,7 +74,7 @@ vercel.json
 
 Процесс: brainstorming ✅ → дизайн утверждён ✅ (вариант A, Vercel, Neon, SSE, MCP) → **спека** ✅ (`docs/superpowers/specs/`) → writing-plans ✅ → TDD-имплементация ✅ → code-review ✅ → README/Roadmap ✅ → демо ✅ → деплой ✅.
 
-Статус на 2026-07-03: **задеплоено и проверено на проде.** Live: https://ai-gantt-planner-psi.vercel.app. Backend (32 pytest) + frontend (`npm run build`) + E2E (12 Playwright-спеков на desktop, включая `golden-path` и `demo`) — все зелёные. На проде проверены сквозным прогоном: SPA, `/api/health`, `/api/plan`, экспорт Excel, чат с живой моделью OpenRouter (SSE), MCP-handshake (`/api/mcp/`). Ключ OpenRouter — в Vercel env (Production/Preview/Development). Деплой на MemoryStore (без Neon) — план сбрасывается на cold start; провижининг Neon + `psycopg` под Python 3.13 вынесены в Roadmap. Осталось опционально: git-remote на GitHub для deliverable «ссылка на репозиторий».
+Статус на 2026-07-03: **задеплоено и проверено на проде.** Live: https://ai-gantt-planner-psi.vercel.app. Backend (32 pytest) + frontend (`npm run build`) + E2E (12 Playwright-спеков на desktop, включая `golden-path` и `demo`) — все зелёные. На проде проверены сквозным прогоном: SPA, `/api/health`, `/api/plan`, экспорт Excel, чат с живой моделью OpenRouter (SSE), MCP-handshake (`/api/mcp/`). Ключ OpenRouter — в Vercel env (Production/Preview/Development). Деплой на MemoryStore (без Neon) — план сбрасывается на cold start; провижининг Neon + `psycopg` под Python 3.13 вынесены в Roadmap. Репозиторий опубликован: https://github.com/devfilippio/ai-gantt-planner (public, 75 коммитов). Все deliverables ТЗ закрыты.
 
 ## Правила
 
