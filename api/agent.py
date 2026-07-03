@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 import os
 from datetime import date
-from typing import Any, Iterator, Protocol
+from typing import Any, Callable, Iterator, Protocol
 
-from api.models import Plan
+from api.models import Plan, PlanPatch
 from api.scheduler import compute_schedule
 from api.tool_registry import TOOL_SCHEMAS, dispatch
 from api.tools import ToolError
@@ -71,12 +71,22 @@ duration_days = число дней между датами (11→18 мая = 7 
 сам называет длительность в днях — используй её, а не дни между датами.
 - Год не указан — бери год из текущего плана (см. «Старт проекта» ниже).
 
-Переспрашивай ТОЛЬКО когда действие деструктивно-неоднозначно: например, «удали \
-задачу вёрстки» подходит под несколько задач и удаление нельзя отменить \
-неявно — в этом случае уточни, какую именно. Одного уточняющего вопроса \
-достаточно. История диалога тебе доступна: если пользователь уже ответил на \
-твой вопрос (в истории есть его ответ), НЕ переспрашивай снова — действуй по \
-полученному ответу.
+Переспрашивай в двух случаях:
+1. Действие деструктивно-неоднозначно: например, «удали задачу вёрстки» \
+подходит под несколько задач и удаление нельзя отменить неявно — уточни, какую \
+именно.
+2. Запрос субъективный или не даёт критерия для конкретного изменения через \
+инструменты («сделай план красивее», «сделай план лучше», «оптимизируй план» \
+без деталей). У тебя нет инструмента «переименовать красиво» или «улучшить» — \
+есть только конкретные мутации (сроки, исполнители, зависимости, задачи). Не \
+изобретай никакую понравившуюся тебе мутацию (эмодзи в названиях, случайные \
+переименования и т.п.) просто чтобы что-то сделать — вместо этого спроси, что \
+именно пользователь имеет в виду (сроки? нагрузка? структура зависимостей?), \
+и не вызывай ни одного инструмента, пока не поймёшь конкретное намерение.
+
+Одного уточняющего вопроса достаточно. История диалога тебе доступна: если \
+пользователь уже ответил на твой вопрос (в истории есть его ответ), НЕ \
+переспрашивай снова — действуй по полученному ответу.
 
 Если в одном сообщении несколько независимых просьб («добавь задачу для Марии \
 и удали задачу у Олега») — выполни ВСЕ их за один ход, вызвав нужные инструменты \
@@ -89,6 +99,9 @@ duration_days = число дней между датами (11→18 мая = 7 
 - Если инструмент отклонил изменение (ошибка валидации, цикл зависимостей, \
 несуществующая задача и т.п.) — объясни пользователю простыми словами, почему \
 изменение не применено, и предложи, что можно сделать вместо этого.
+- Если пользователь просит отменить, откатить последнее изменение («отмени», \
+«отмени последнее изменение», «откати правку») — вызови инструмент \
+undo_last_turn. Он откатывает план к состоянию до последней применённой мутации.
 - Без эмодзи. Отвечай кратко и по-русски.
 """
 
@@ -118,7 +131,11 @@ def _history_messages(history: list[dict] | None) -> list[dict]:
 
 
 def run_agent_turn(
-    message: str, plan: Plan, llm: "LLM", history: list[dict] | None = None
+    message: str,
+    plan: Plan,
+    llm: "LLM",
+    history: list[dict] | None = None,
+    undo_callback: Callable[[], Plan] | None = None,
 ) -> Iterator[dict[str, Any]]:
     """Runs one agent turn: loops calling llm.create with tool schemas, dispatching
     any tool calls against a working copy of the plan, and streaming events.
@@ -128,6 +145,15 @@ def run_agent_turn(
     before the new `message` so the model has memory across turns - each
     /api/chat call is otherwise stateless. Capped to the last HISTORY_CAP
     entries.
+
+    `undo_callback`, if given, is invoked instead of `dispatch()` whenever the
+    model calls the `undo_last_turn` tool. Undo lives in the store's snapshot
+    stack (see api/store.py), not in the plan value this function operates
+    on, so it can't be expressed as a plain `api/tools.py` function - the
+    caller (api/index.py's chat route) wires this to `store.undo()` followed
+    by `store.get_plan()`, returning the restored Plan. Without a callback
+    (e.g. no caller wired one up), the tool call yields an honest error
+    instead of silently no-op'ing.
 
     Yields dicts of shape:
       {"type": "tool_call", "tool": name, "args": args}
@@ -179,6 +205,29 @@ def run_agent_turn(
                 args = call.get("arguments", {})
                 call_id = call.get("id", f"call_{i}")
                 yield {"type": "tool_call", "tool": name, "args": args}
+                if name == "undo_last_turn":
+                    if undo_callback is None:
+                        err = (
+                            "Откат недоступен в этом режиме: нет доступа к истории снапшотов. "
+                            "Используйте кнопку «Откатить» в интерфейсе."
+                        )
+                        yield {"type": "error", "detail": err}
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": call_id,
+                            "content": f"Ошибка: {err}",
+                        })
+                        continue
+                    restored = undo_callback()
+                    working_plan = restored
+                    patch = PlanPatch(plan=restored, changed_ids=[])
+                    yield {"type": "patch", "plan_patch": patch.model_dump()}
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": call_id,
+                        "content": f"OK, откат выполнен.\nПлан теперь:\n{compact_plan(working_plan)}",
+                    })
+                    continue
                 try:
                     patch = dispatch(name, args, working_plan)
                 except ToolError as e:
@@ -249,6 +298,8 @@ class MockLLM:
                     "arguments": {"name": "Настройка аналитики", "description": "",
                                   "assignee": "Иван", "duration_days": 3,
                                   "predecessors": ["Вёрстка и интеграция"]}}]}
+        if "отмени" in text or "отменить" in text or "откати" in text or "откатить" in text:
+            return {"tool_calls": [{"id": "1", "name": "undo_last_turn", "arguments": {}}]}
 
         self._done = False  # no tool call was made; next call should still terminate
         return {"content": "Готово."}

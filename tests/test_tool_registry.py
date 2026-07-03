@@ -5,7 +5,7 @@ from api.seed import seed_plan
 def test_schemas_are_openai_shaped():
     names = {s["function"]["name"] for s in TOOL_SCHEMAS}
     assert {"add_task", "update_task", "delete_task", "set_dependencies",
-            "reassign_tasks", "shift_tasks", "get_plan"} <= names
+            "reassign_tasks", "shift_tasks", "get_plan", "undo_last_turn"} <= names
 
 
 def test_dispatch_runs_a_tool():

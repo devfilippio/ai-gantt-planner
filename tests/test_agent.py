@@ -162,3 +162,68 @@ def test_agent_mock_add_task_creates_task_with_resolved_predecessor():
     # Predecessor was given by NAME ("Вёрстка и интеграция") and must resolve
     # to the real task id.
     assert new["predecessors"] == ["frontend"]
+
+
+class UndoLLM:
+    """Always calls undo_last_turn, then finishes."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def create(self, messages, tools):
+        self.calls += 1
+        if self.calls == 1:
+            return {"tool_calls": [{"id": "1", "name": "undo_last_turn", "arguments": {}}]}
+        return {"content": "Откат выполнен."}
+
+
+def test_agent_undo_last_turn_uses_callback():
+    """undo_last_turn has no plan-level implementation (undo lives in the
+    store's snapshot stack) - run_agent_turn must invoke the optional
+    undo_callback instead of api.tool_registry.dispatch, and surface its
+    result as a normal patch event."""
+    plan = seed_plan()
+    restored_plan = seed_plan()  # any distinguishable Plan value stands in for "the restored one"
+    restored_plan.tasks[0].description = "restored-marker"
+
+    calls = {"n": 0}
+
+    def fake_undo_callback():
+        calls["n"] += 1
+        return restored_plan
+
+    events = list(run_agent_turn(
+        "отмени последнее изменение", plan, llm=UndoLLM(), undo_callback=fake_undo_callback,
+    ))
+    assert calls["n"] == 1
+    types = [e["type"] for e in events]
+    assert "patch" in types
+    assert "error" not in types
+    patch_event = [e for e in events if e["type"] == "patch"][-1]
+    assert patch_event["plan_patch"]["plan"]["tasks"][0]["description"] == "restored-marker"
+
+
+def test_agent_undo_last_turn_without_callback_is_honest_error():
+    """Callers that don't wire an undo_callback (e.g. a bare script) must get
+    a clear error event - never a silent no-op and never a crash."""
+    plan = seed_plan()
+    events = list(run_agent_turn("отмени последнее изменение", plan, llm=UndoLLM()))
+    types = [e["type"] for e in events]
+    assert "error" in types
+    assert "patch" not in types
+    error_event = [e for e in events if e["type"] == "error"][-1]
+    assert "Откат" in error_event["detail"] or "откат" in error_event["detail"].lower()
+
+
+def test_mock_llm_routes_undo_keywords_to_undo_last_turn():
+    from api.agent import MockLLM
+
+    plan = seed_plan()
+    restored = seed_plan()
+
+    events = list(run_agent_turn(
+        "отмени последнее изменение", plan, llm=MockLLM(),
+        undo_callback=lambda: restored,
+    ))
+    tool_calls = [e for e in events if e["type"] == "tool_call"]
+    assert tool_calls and tool_calls[0]["tool"] == "undo_last_turn"

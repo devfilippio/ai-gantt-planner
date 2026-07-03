@@ -101,3 +101,82 @@ def test_chat_patch_event_includes_recomputed_schedule(monkeypatch):
         schedule = plan_patch["schedule"]
         assert schedule is not None
         assert len(schedule) == len(plan["tasks"])
+
+
+class UndoOnlyLLM:
+    """Always calls undo_last_turn, then finishes - drives /api/chat's real
+    undo_callback wiring (store.undo + store.get_plan) end to end."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def create(self, messages, tools):
+        self.calls += 1
+        if self.calls == 1:
+            return {"tool_calls": [{"id": "1", "name": "undo_last_turn", "arguments": {}}]}
+        return {"content": "Откат выполнен."}
+
+
+def test_chat_undo_last_turn_restores_plan_via_store(monkeypatch):
+    """'отмени последнее изменение' in chat must actually restore the plan
+    that was there before the previous agent mutation, using the real store's
+    snapshot stack - not just claim it did."""
+    from api import agent
+
+    client.post("/api/reset")
+    before_count = len(client.get("/api/plan").json()["plan"]["tasks"])
+
+    monkeypatch.setattr(agent, "default_llm", lambda: FakeLLM())
+    with client.stream("POST", "/api/chat", json={"message": "переназначь Марию на Петра"}) as r:
+        "".join(chunk for chunk in r.iter_text())
+    mutated = client.get("/api/plan").json()["plan"]
+    assert any(t["assignee"] == "Пётр" for t in mutated["tasks"])
+
+    monkeypatch.setattr(agent, "default_llm", lambda: UndoOnlyLLM())
+    with client.stream("POST", "/api/chat", json={"message": "отмени последнее изменение"}) as r:
+        assert r.status_code == 200
+        body = "".join(chunk for chunk in r.iter_text())
+
+    events = _parse_sse_events(body)
+    assert any(e.get("type") == "patch" for e in events)
+    assert not any(e.get("type") == "error" for e in events)
+
+    restored = client.get("/api/plan").json()["plan"]
+    assert len(restored["tasks"]) == before_count
+    assert not any(t["assignee"] == "Пётр" for t in restored["tasks"])
+
+
+def test_chat_undo_last_turn_does_not_pollute_snapshot_stack(monkeypatch):
+    """Regression: the chat route's generic patch handler used to call
+    store.snapshot() unconditionally on the first patch event of a turn -
+    including the patch produced by undo_last_turn itself. That pushed the
+    just-restored plan back onto the snapshot stack, so a subsequent
+    /api/undo would be a no-op instead of going one step further back."""
+    from api import agent
+
+    client.post("/api/reset")
+    original = client.get("/api/plan").json()["plan"]
+
+    # Two real mutations, so there are two distinct prior states to undo to.
+    monkeypatch.setattr(agent, "default_llm", lambda: FakeLLM())
+    with client.stream("POST", "/api/chat", json={"message": "переназначь Марию на Петра"}) as r:
+        "".join(chunk for chunk in r.iter_text())
+    after_first_mutation = client.get("/api/plan").json()["plan"]
+
+    client.post("/api/agent-test-mutation")  # snapshots then deletes task[0] - a second distinct state
+    after_second_mutation = client.get("/api/plan").json()["plan"]
+    assert after_second_mutation != after_first_mutation
+
+    # Undo via chat should pop back to `after_first_mutation`.
+    monkeypatch.setattr(agent, "default_llm", lambda: UndoOnlyLLM())
+    with client.stream("POST", "/api/chat", json={"message": "отмени последнее изменение"}) as r:
+        "".join(chunk for chunk in r.iter_text())
+    after_chat_undo = client.get("/api/plan").json()["plan"]
+    assert after_chat_undo == after_first_mutation
+
+    # A second, independent undo (via the plain REST route) must go one step
+    # further back to the original seed - not repeat the same restore because
+    # the chat undo polluted the stack with a duplicate entry.
+    client.post("/api/undo")
+    after_second_undo = client.get("/api/plan").json()["plan"]
+    assert after_second_undo == original

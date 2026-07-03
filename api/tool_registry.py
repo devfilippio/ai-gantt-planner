@@ -158,6 +158,19 @@ TOOL_SCHEMAS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "undo_last_turn",
+            "description": "Откатывает план к состоянию до последнего применённого агентом изменения "
+                            "(отменяет последнюю мутацию плана). Без аргументов.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
 ]
 
 _DISPATCH_TABLE = {

@@ -159,9 +159,31 @@ def chat_route(body: ChatRequest) -> StreamingResponse:
             return
 
         snapshotted = False
+        last_tool_name = None
+
+        def _undo_callback():
+            store.undo()
+            return store.get_plan()
+
         history = [{"role": turn.role, "text": turn.text} for turn in body.history]
-        for event in agent.run_agent_turn(body.message, plan, llm=llm, history=history):
+        for event in agent.run_agent_turn(
+            body.message, plan, llm=llm, history=history, undo_callback=_undo_callback
+        ):
+            if event["type"] == "tool_call":
+                last_tool_name = event["tool"]
             if event["type"] == "patch":
+                # undo_last_turn already popped the store's own snapshot stack
+                # inside _undo_callback (via store.undo()) and the restored
+                # plan is already saved on the store - snapshotting here would
+                # push that same restored state back onto the stack, silently
+                # burning a slot and making a follow-up undo a no-op instead of
+                # going further back. Skip the snapshot/save for that one tool.
+                if last_tool_name == "undo_last_turn":
+                    patched_plan = agent_plan_from_patch(event)
+                    schedule = compute_schedule(patched_plan)
+                    event["plan_patch"]["schedule"] = [s.model_dump() for s in schedule]
+                    yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                    continue
                 if not snapshotted:
                     store.snapshot()
                     snapshotted = True
