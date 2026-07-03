@@ -5,7 +5,9 @@
   min-width: 0;
   flex: 1;
   height: 100%;
-  min-height: 480px;
+  /* No fixed min-height: the panel must fit its parent's resolved height so
+     the log (flex:1, min-height:0) can shrink and scroll internally. */
+  min-height: 0;
   box-sizing: border-box;
 }
 
@@ -54,7 +56,10 @@
   flex-direction: column;
   gap: 8px;
   padding-right: 2px;
-  min-height: 240px;
+  /* min-height: 0 (not a fixed px) is what lets a flex child shrink and hand
+     overflow to its own scrollbar — a fixed value made the log grow past the
+     panel instead of scrolling. */
+  min-height: 0;
 }
 
 .chat-panel__empty {

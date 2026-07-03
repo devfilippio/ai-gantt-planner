@@ -16,8 +16,11 @@
   position: sticky;
   top: 28px;
   display: flex;
-  min-height: 480px;
-  max-height: calc(100svh - 56px);
+  /* Definite height (not just max-height): .chat-panel's height:100% needs a
+     resolved parent height, otherwise the panel grows with chat content and
+     overflows past the border with no way to scroll the log. */
+  height: calc(100svh - 56px);
+  min-height: 320px;
   border: 1px solid var(--line);
   border-radius: 6px;
   background: var(--surface-1);
@@ -33,6 +36,7 @@
 
   .app-shell__chat {
     position: static;
-    min-height: 160px;
+    height: 70svh;
+    min-height: 320px;
   }
 }

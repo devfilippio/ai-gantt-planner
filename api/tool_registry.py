@@ -27,7 +27,7 @@ TOOL_SCHEMAS = [
                     "predecessors": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Список id задач-предшественников",
+                        "description": "Список id (или точных названий) задач-предшественников",
                     },
                 },
                 "required": ["name", "description", "assignee", "duration_days", "predecessors"],
@@ -42,7 +42,7 @@ TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "id": {"type": "string", "description": "Id задачи, которую нужно обновить"},
+                    "id": {"type": "string", "description": "Id задачи (или её точное название)"},
                     "name": {"type": "string", "description": "Новое название задачи"},
                     "description": {"type": "string", "description": "Новое описание задачи"},
                     "assignee": {"type": "string", "description": "Новый ответственный за задачу"},
@@ -50,7 +50,7 @@ TOOL_SCHEMAS = [
                     "predecessors": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Новый список id задач-предшественников",
+                        "description": "Новый список id (или точных названий) задач-предшественников",
                     },
                 },
                 "required": ["id"],
@@ -65,7 +65,7 @@ TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "id": {"type": "string", "description": "Id задачи, которую нужно удалить"},
+                    "id": {"type": "string", "description": "Id задачи (или её точное название)"},
                 },
                 "required": ["id"],
             },
@@ -79,11 +79,11 @@ TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "id": {"type": "string", "description": "Id задачи, для которой задаются зависимости"},
+                    "id": {"type": "string", "description": "Id задачи (или её точное название)"},
                     "predecessors": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Список id задач-предшественников",
+                        "description": "Список id (или точных названий) задач-предшественников",
                     },
                 },
                 "required": ["id", "predecessors"],
@@ -143,6 +143,52 @@ _DISPATCH_TABLE = {
     "shift_tasks": shift_tasks,
 }
 
+# Args each tool actually accepts — anything else the model invents is dropped
+# instead of raising TypeError deep inside the tool function.
+_KNOWN_ARGS = {
+    "add_task": {"name", "description", "assignee", "duration_days", "predecessors"},
+    "update_task": {"id", "name", "description", "assignee", "duration_days", "predecessors"},
+    "delete_task": {"id"},
+    "set_dependencies": {"id", "predecessors"},
+    "reassign_tasks": {"from_assignee", "to_assignee"},
+    "shift_tasks": {"assignee", "days"},
+}
+
+
+def _resolve_task_ref(ref: str, plan: Plan) -> str:
+    """Resolve a task reference that may be an id OR a human name.
+
+    LLMs frequently pass the visible task name ("Вёрстка и интеграция") where
+    the schema asks for an id ("frontend"). Exact id match wins; otherwise fall
+    back to a case-insensitive name match. Unresolvable refs are returned
+    as-is so the tool's own validation produces its normal error message.
+    """
+    ids = {t.id for t in plan.tasks}
+    if ref in ids:
+        return ref
+    needle = ref.strip().lower()
+    for t in plan.tasks:
+        if t.name.strip().lower() == needle:
+            return t.id
+    # Forgiving partial match — unique substring of a name (e.g. "вёрстка").
+    partial = [t.id for t in plan.tasks if needle and needle in t.name.strip().lower()]
+    if len(partial) == 1:
+        return partial[0]
+    return ref
+
+
+def _normalize_args(name: str, args: dict, plan: Plan) -> dict:
+    known = _KNOWN_ARGS.get(name, set())
+    out = {k: v for k, v in args.items() if k in known}
+    if isinstance(out.get("id"), str):
+        out["id"] = _resolve_task_ref(out["id"], plan)
+    preds = out.get("predecessors")
+    if isinstance(preds, list):
+        out["predecessors"] = [
+            _resolve_task_ref(p, plan) if isinstance(p, str) else p for p in preds
+        ]
+    return out
+
 
 def dispatch(name: str, args: dict, plan: Plan) -> PlanPatch:
     if name == "get_plan":
@@ -150,4 +196,4 @@ def dispatch(name: str, args: dict, plan: Plan) -> PlanPatch:
     func = _DISPATCH_TABLE.get(name)
     if func is None:
         raise ToolError(f"Неизвестный инструмент: '{name}'")
-    return func(plan, **args)
+    return func(plan, **_normalize_args(name, args, plan))

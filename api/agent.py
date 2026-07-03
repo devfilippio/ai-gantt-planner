@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from typing import Any, Iterator, Protocol
 
@@ -7,7 +8,22 @@ from api.models import Plan
 from api.tool_registry import TOOL_SCHEMAS, dispatch
 from api.tools import ToolError
 
-MAX_TURNS = 6
+MAX_TURNS = 8
+
+
+def compact_plan(plan: Plan) -> str:
+    """A small, LLM-friendly listing of the current plan so the model always
+    knows the real task ids (and can resolve a user's "после вёрстки" to the
+    right id) without having to loop on get_plan."""
+    if not plan.tasks:
+        return "(план пуст)"
+    lines = []
+    for t in plan.tasks:
+        preds = ", ".join(t.predecessors) if t.predecessors else "—"
+        lines.append(
+            f"{t.id} · {t.name} · {t.assignee} · {t.duration_days}д · предшественники: {preds}"
+        )
+    return "\n".join(lines)
 
 SYSTEM_PROMPT = """\
 Ты — ассистент по управлению планом проекта (диаграмма Ганта).
@@ -44,6 +60,14 @@ def run_agent_turn(message: str, plan: Plan, llm: "LLM") -> Iterator[dict[str, A
     working_plan = plan
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
+        # The model gets the current plan (with real task ids) up front, so it
+        # can resolve "после вёрстки" → the right id immediately instead of
+        # looping on get_plan.
+        {
+            "role": "system",
+            "content": "Текущий план (id · название · исполнитель · длительность · предшественники):\n"
+            + compact_plan(working_plan),
+        },
         {"role": "user", "content": message},
     ]
 
@@ -52,9 +76,28 @@ def run_agent_turn(message: str, plan: Plan, llm: "LLM") -> Iterator[dict[str, A
         tool_calls = result.get("tool_calls")
 
         if tool_calls:
-            for call in tool_calls:
+            # Echo the assistant turn (with its tool_calls) into the history —
+            # required by the OpenAI/OpenRouter protocol: a `tool` result must
+            # follow an assistant message that declared the matching call id.
+            messages.append({
+                "role": "assistant",
+                "content": result.get("content") or None,
+                "tool_calls": [
+                    {
+                        "id": call.get("id", f"call_{i}"),
+                        "type": "function",
+                        "function": {
+                            "name": call["name"],
+                            "arguments": json.dumps(call.get("arguments", {}), ensure_ascii=False),
+                        },
+                    }
+                    for i, call in enumerate(tool_calls)
+                ],
+            })
+            for i, call in enumerate(tool_calls):
                 name = call["name"]
                 args = call.get("arguments", {})
+                call_id = call.get("id", f"call_{i}")
                 yield {"type": "tool_call", "tool": name, "args": args}
                 try:
                     patch = dispatch(name, args, working_plan)
@@ -62,16 +105,27 @@ def run_agent_turn(message: str, plan: Plan, llm: "LLM") -> Iterator[dict[str, A
                     yield {"type": "error", "detail": str(e)}
                     messages.append({
                         "role": "tool",
-                        "tool_call_id": call.get("id", ""),
-                        "content": f"error: {e}",
+                        "tool_call_id": call_id,
+                        "content": f"Ошибка: {e}",
                     })
                     continue
                 working_plan = patch.plan
                 yield {"type": "patch", "plan_patch": patch.model_dump()}
+                # Feed the REAL result back to the model. For get_plan that's
+                # the plan itself (otherwise the model asks again in a loop);
+                # for mutations — a confirmation plus the updated plan snapshot
+                # so follow-up calls use fresh ids/durations.
+                if name == "get_plan":
+                    tool_result = compact_plan(working_plan)
+                else:
+                    tool_result = (
+                        f"OK, применено. Изменённые задачи: {patch.changed_ids or []}.\n"
+                        f"План теперь:\n{compact_plan(working_plan)}"
+                    )
                 messages.append({
                     "role": "tool",
-                    "tool_call_id": call.get("id", ""),
-                    "content": "ok",
+                    "tool_call_id": call_id,
+                    "content": tool_result,
                 })
             continue
 
@@ -108,6 +162,13 @@ class MockLLM:
         if "мари" in text and "петр" in text:
             return {"tool_calls": [{"id": "1", "name": "reassign_tasks",
                     "arguments": {"from_assignee": "Мария", "to_assignee": "Пётр"}}]}
+        if "добавь" in text and "аналитик" in text:
+            # Predecessor is given by NAME on purpose — exercises the
+            # name→id resolution in tool_registry the way a real LLM does.
+            return {"tool_calls": [{"id": "1", "name": "add_task",
+                    "arguments": {"name": "Настройка аналитики", "description": "",
+                                  "assignee": "Иван", "duration_days": 3,
+                                  "predecessors": ["Вёрстка и интеграция"]}}]}
 
         self._done = False  # no tool call was made; next call should still terminate
         return {"content": "Готово."}
