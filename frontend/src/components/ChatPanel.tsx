@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { usePlanStore } from '../store/planStore';
 import { streamChat } from '../api/client';
+import { summarizeToolCall } from '../lib/toolSummary';
 import type { AgentEvent } from '../types';
 import './ChatPanel.css';
 
@@ -9,28 +10,6 @@ const EXAMPLE_COMMANDS = [
   'перенеси задачи Олега на неделю',
   'переназначь задачи Марии на Петра',
 ];
-
-/** Maps a tool name + its args to a short Russian summary for the chip, e.g.
- * "shift_tasks · Олег +7д". Falls back to the raw tool name for anything
- * not explicitly handled, so a future tool never renders a blank chip. */
-function summarizeToolCall(tool: string, args: Record<string, unknown>): string {
-  switch (tool) {
-    case 'shift_tasks':
-      return `${tool} · ${String(args.assignee ?? '?')} +${String(args.days ?? '?')}д`;
-    case 'reassign_tasks':
-      return `${tool} · ${String(args.from_assignee ?? '?')} → ${String(args.to_assignee ?? '?')}`;
-    case 'update_task':
-      return `${tool} · ${String(args.id ?? '?')}`;
-    case 'add_task':
-      return `${tool} · ${String(args.name ?? '?')}`;
-    case 'delete_task':
-      return `${tool} · ${String(args.id ?? '?')}`;
-    case 'set_dependencies':
-      return `${tool} · ${String(args.id ?? '?')}`;
-    default:
-      return tool;
-  }
-}
 
 /** Best-effort extraction of task ids a tool call touched, so TaskModal can
  * later filter the chat log's history to a single task. Not exhaustive for

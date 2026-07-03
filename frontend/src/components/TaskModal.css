@@ -12,13 +12,13 @@
 }
 
 .task-modal {
-  width: min(420px, 100%);
-  max-height: min(560px, calc(100vh - 48px));
+  width: min(440px, 100%);
+  max-height: min(640px, calc(100vh - 48px));
   overflow-y: auto;
   background: var(--surface-1);
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 22px 24px;
+  padding: 18px 24px 24px;
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
   animation: task-modal-in 200ms cubic-bezier(0.32, 0.72, 0, 1);
 }
@@ -27,10 +27,10 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 6px;
+  margin-bottom: 10px;
 }
 
-.task-modal__assignee {
+.task-modal__assignee-tag {
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 0.06em;
@@ -55,24 +55,65 @@
   background: var(--bar);
 }
 
+/* Mini timeline strip — every task as a thin ghost bar positioned by its
+   own schedule, the selected task thicker + white (or accent if it was just
+   agent-changed), plus a hairline amber "today" marker. Presentational only. */
+.task-modal__mini-timeline {
+  width: 100%;
+  height: 40px;
+  display: block;
+  margin-bottom: 16px;
+  overflow: visible;
+}
+
+.task-modal__mini-bar {
+  fill: var(--bar);
+}
+
+.task-modal__mini-bar[data-self='true'] {
+  fill: var(--text);
+}
+
+.task-modal__mini-bar[data-self='true'][data-changed='true'] {
+  fill: var(--accent);
+}
+
+.task-modal__mini-today {
+  stroke: var(--today);
+  stroke-width: 1;
+  stroke-dasharray: 2 2.5;
+  opacity: 0.8;
+}
+
 .task-modal__title {
   font-size: 18px;
   font-weight: 600;
   color: var(--text);
-  margin: 0 0 8px;
+  margin: 0 0 6px;
 }
 
 .task-modal__description {
   font-size: 13px;
   line-height: 1.5;
   color: var(--text-dim);
+  margin: 0 0 8px;
+}
+
+/* Human-readable date range, e.g. "12 мая → 18 мая 2026" — sits quietly
+   under the title/description, ISO stays only in the data-start/data-end
+   attributes E2E relies on. */
+.task-modal__dates {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.03em;
+  color: var(--text-mute);
   margin: 0 0 16px;
 }
 
 .task-modal__stats {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 10px 16px;
+  gap: 14px 16px;
   margin: 0 0 18px;
   padding: 14px 16px;
   background: var(--bg);
@@ -86,7 +127,7 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-mute);
-  margin: 0 0 2px;
+  margin: 0 0 6px;
 }
 
 .task-modal__stat dd {
@@ -95,16 +136,95 @@
   margin: 0;
 }
 
-.task-modal__stat--critical {
+.task-modal__stat--wide {
   grid-column: 1 / -1;
+}
+
+/* Assignee as a small initial-dot chip + name. */
+.task-modal__assignee-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.task-modal__assignee-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--bar);
+  color: var(--text-dim);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 10px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+/* Duration stepper — [-] N д [+]; the bar animates behind the modal on
+   click since resizeTask patches the store the main chart already
+   subscribes to (the deliberate "wow" moment from the spec). */
+.task-modal__stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-mono);
+}
+
+.task-modal__stepper-btn {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bar);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  transition: border-color 140ms ease, color 140ms ease, opacity 140ms ease;
+}
+
+.task-modal__stepper-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.task-modal__stepper-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.task-modal__stepper-value {
+  font-size: 13px;
+  color: var(--text);
+  min-width: 3.2em;
+  text-align: center;
+}
+
+/* Status badges — critical path (amber-outlined) vs. slack (quiet neutral). */
+.task-modal__badge {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
   letter-spacing: 0.04em;
-  color: var(--bar-critical);
+  color: var(--text-mute);
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+.task-modal__badge--critical {
+  color: var(--today);
+  border-color: color-mix(in srgb, var(--today) 45%, var(--line) 55%);
 }
 
 .task-modal__section {
   margin-bottom: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
 }
 
 .task-modal__section:last-child {
