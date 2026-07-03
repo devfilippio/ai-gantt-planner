@@ -129,9 +129,18 @@ async def import_plan_route(file: UploadFile) -> dict:
 def chat_route(body: ChatRequest) -> StreamingResponse:
     store = get_store()
     plan = store.get_plan()
-    llm = agent.default_llm()
 
     def event_stream():
+        try:
+            llm = agent.default_llm()
+        except KeyError:
+            # OPENROUTER_API_KEY not configured on the server. Surface a clean
+            # chat error instead of a 500 so the deployed app degrades
+            # gracefully (the Gantt, import/export and manual edits still work).
+            yield f'data: {json.dumps({"type": "error", "detail": "LLM не настроен: задайте OPENROUTER_API_KEY на сервере."}, ensure_ascii=False)}\n\n'
+            yield f'data: {json.dumps({"type": "done"}, ensure_ascii=False)}\n\n'
+            return
+
         snapshotted = False
         for event in agent.run_agent_turn(body.message, plan, llm=llm):
             if event["type"] == "patch":
