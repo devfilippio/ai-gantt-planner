@@ -29,6 +29,17 @@ TOOL_SCHEMAS = [
                         "items": {"type": "string"},
                         "description": "Список id (или точных названий) задач-предшественников",
                     },
+                    "start_date": {
+                        "type": "string",
+                        "description": "Дата начала YYYY-MM-DD — для независимой задачи или отложенного старта. "
+                                        "Если указана, имеет приоритет над lead_days.",
+                    },
+                    "lead_days": {
+                        "type": "integer",
+                        "description": "Сколько дополнительных календарных дней подождать перед стартом "
+                                        "(после того как освободятся предшественники или наступит старт проекта). "
+                                        "Обычно проще указать start_date.",
+                    },
                 },
                 "required": ["name", "description", "assignee", "duration_days", "predecessors"],
             },
@@ -51,6 +62,17 @@ TOOL_SCHEMAS = [
                         "type": "array",
                         "items": {"type": "string"},
                         "description": "Новый список id (или точных названий) задач-предшественников",
+                    },
+                    "start_date": {
+                        "type": "string",
+                        "description": "Новая дата начала YYYY-MM-DD — задаёт lead_days так, чтобы задача "
+                                        "стартовала именно в эту дату (относительно предшественников или "
+                                        "старта проекта).",
+                    },
+                    "lead_days": {
+                        "type": "integer",
+                        "description": "Новое число дополнительных дней ожидания перед стартом задачи. "
+                                        "Обычно проще указать start_date.",
                     },
                 },
                 "required": ["id"],
@@ -109,12 +131,16 @@ TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "shift_tasks",
-            "description": "Сдвигает задачи указанного ответственного, увеличивая их длительность на заданное число дней.",
+            "description": "Сдвигает начало задач ответственного на N дней (длительность не меняется); "
+                            "отрицательное N — раньше.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "assignee": {"type": "string", "description": "Ответственный, чьи задачи нужно сдвинуть"},
-                    "days": {"type": "integer", "description": "Число дней, на которое сдвигаются задачи"},
+                    "days": {
+                        "type": "integer",
+                        "description": "Число дней сдвига начала задач; отрицательное значение сдвигает раньше",
+                    },
                 },
                 "required": ["assignee", "days"],
             },
@@ -146,8 +172,10 @@ _DISPATCH_TABLE = {
 # Args each tool actually accepts — anything else the model invents is dropped
 # instead of raising TypeError deep inside the tool function.
 _KNOWN_ARGS = {
-    "add_task": {"name", "description", "assignee", "duration_days", "predecessors"},
-    "update_task": {"id", "name", "description", "assignee", "duration_days", "predecessors"},
+    "add_task": {"name", "description", "assignee", "duration_days", "predecessors",
+                 "start_date", "lead_days"},
+    "update_task": {"id", "name", "description", "assignee", "duration_days", "predecessors",
+                     "start_date", "lead_days"},
     "delete_task": {"id"},
     "set_dependencies": {"id", "predecessors"},
     "reassign_tasks": {"from_assignee", "to_assignee"},

@@ -44,7 +44,7 @@ def compute_schedule(plan: Plan) -> list[Scheduled]:
     for tid in order:
         t = by_id[tid]
         valid_preds = [p for p in t.predecessors if p in ends]
-        s = max((ends[p] for p in valid_preds), default=start_d)
+        s = max((ends[p] for p in valid_preds), default=start_d) + timedelta(days=t.lead_days)
         e = s + timedelta(days=t.duration_days)
         starts[tid], ends[tid] = s, e
     result = [

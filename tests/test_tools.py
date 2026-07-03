@@ -1,5 +1,6 @@
 import pytest
 from api.models import Task, Plan
+from api.scheduler import compute_schedule
 from api.tools import (
     add_task, update_task, delete_task, set_dependencies,
     reassign_tasks, shift_tasks, ToolError,
@@ -41,13 +42,109 @@ def test_reassign_tasks_bulk():
     assert set(patch.changed_ids) == {"a", "b"}
 
 
-def test_shift_tasks_increases_duration_of_gate():
-    # shifting by assignee moves their tasks later by inserting slack via duration on a lead task is out of scope;
-    # shift = add N days to duration of matched tasks' start via a lead-in. Here we shift Oleg's tasks by 7 days.
-    patch = shift_tasks(_plan(), assignee="Oleg", days=7)
+def test_shift_tasks_is_true_shift_keeps_duration_moves_start():
+    """shift_tasks must be a true shift: duration stays constant, only the
+    start (via lead_days) moves later. Previously this bumped duration_days,
+    which silently changed the task's effort — see docs/roadmap-to-production.md."""
+    plan = _plan()
+    before_sched = {s.id: s for s in compute_schedule(plan)}
+    patch = shift_tasks(plan, assignee="Oleg", days=7)
     assert set(patch.changed_ids) == {"c"}
+
+    shifted = next(t for t in patch.plan.tasks if t.id == "c")
+    original = next(t for t in plan.tasks if t.id == "c")
+    assert shifted.duration_days == original.duration_days  # duration unchanged
+
+    after_sched = {s.id: s for s in compute_schedule(patch.plan)}
+    from datetime import date, timedelta
+    expected_start = date.fromisoformat(before_sched["c"].start) + timedelta(days=7)
+    assert after_sched["c"].start == expected_start.isoformat()
+    # duration is the same, so the gap between start and end is unchanged.
+    expected_end = date.fromisoformat(before_sched["c"].end) + timedelta(days=7)
+    assert after_sched["c"].end == expected_end.isoformat()
+
+
+def test_shift_tasks_negative_days_moves_earlier_clamped_at_zero():
+    plan = _plan()
+    # c already has lead_days=0; shifting earlier should clamp at 0, not go negative.
+    patch = shift_tasks(plan, assignee="Oleg", days=-3)
+    shifted = next(t for t in patch.plan.tasks if t.id == "c")
+    assert shifted.lead_days == 0
+
+    # Now shift later first, then earlier by less than the accumulated lead —
+    # should reduce lead_days rather than clamp.
+    patch2 = shift_tasks(patch.plan, assignee="Oleg", days=5)
+    shifted2 = next(t for t in patch2.plan.tasks if t.id == "c")
+    assert shifted2.lead_days == 5
+    patch3 = shift_tasks(patch2.plan, assignee="Oleg", days=-2)
+    shifted3 = next(t for t in patch3.plan.tasks if t.id == "c")
+    assert shifted3.lead_days == 3
 
 
 def test_set_dependencies_rejecting_cycle_raises():
     with pytest.raises(ToolError):
         set_dependencies(_plan(), id="a", predecessors=["b"])  # a<-b<-a cycle
+
+
+def test_add_task_with_start_date_sets_lead_days_for_independent_task():
+    plan = _plan()  # project_start 2026-05-05
+    patch = add_task(
+        plan, name="Купить молоко", description="", assignee="Мария",
+        duration_days=7, predecessors=[], start_date="2026-05-11",
+    )
+    new = next(t for t in patch.plan.tasks if t.name == "Купить молоко")
+    sched = {s.id: s for s in compute_schedule(patch.plan)}
+    assert sched[new.id].start == "2026-05-11"
+
+
+def test_add_task_with_start_date_and_predecessor():
+    plan = _plan()
+    sched_before = {s.id: s for s in compute_schedule(plan)}
+    # a ends 2026-05-08. Ask for a start 2 days after that.
+    from datetime import date, timedelta
+    natural_start = date.fromisoformat(sched_before["a"].end)
+    requested = (natural_start + timedelta(days=2)).isoformat()
+    patch = add_task(
+        plan, name="D", description="", assignee="Anna",
+        duration_days=2, predecessors=["a"], start_date=requested,
+    )
+    new = next(t for t in patch.plan.tasks if t.name == "D")
+    sched = {s.id: s for s in compute_schedule(patch.plan)}
+    assert sched[new.id].start == requested
+
+
+def test_add_task_with_explicit_lead_days():
+    patch = add_task(
+        _plan(), name="E", description="", assignee="Anna",
+        duration_days=1, predecessors=[], lead_days=6,
+    )
+    new = next(t for t in patch.plan.tasks if t.name == "E")
+    assert new.lead_days == 6
+    sched = {s.id: s for s in compute_schedule(patch.plan)}
+    assert sched[new.id].start == "2026-05-11"
+
+
+def test_add_task_start_date_wins_over_lead_days_when_both_given():
+    patch = add_task(
+        _plan(), name="F", description="", assignee="Anna",
+        duration_days=1, predecessors=[], lead_days=99, start_date="2026-05-11",
+    )
+    new = next(t for t in patch.plan.tasks if t.name == "F")
+    sched = {s.id: s for s in compute_schedule(patch.plan)}
+    assert sched[new.id].start == "2026-05-11"
+
+
+def test_update_task_start_date_recomputes_lead_against_natural_start():
+    plan = _plan()
+    # task "b" depends on "a" (ends 2026-05-08). Ask to move b's start to 2026-05-15.
+    patch = update_task(plan, id="b", start_date="2026-05-15")
+    sched = {s.id: s for s in compute_schedule(patch.plan)}
+    assert sched["b"].start == "2026-05-15"
+
+
+def test_update_task_lead_days_direct():
+    patch = update_task(_plan(), id="a", lead_days=4)
+    updated = next(t for t in patch.plan.tasks if t.id == "a")
+    assert updated.lead_days == 4
+    sched = {s.id: s for s in compute_schedule(patch.plan)}
+    assert sched["a"].start == "2026-05-09"

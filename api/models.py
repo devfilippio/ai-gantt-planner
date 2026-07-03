@@ -11,6 +11,12 @@ class Task(BaseModel):
     duration_days: int = Field(gt=0)
     predecessors: list[str] = Field(default_factory=list)
     color_hint: str | None = None
+    lead_days: int = Field(default=0, ge=0)
+    """Extra calendar days to wait before the task can start, applied after the
+    later of (predecessors' end, project start). Lets an independent task (no
+    predecessors) start on a specific calendar date instead of always at
+    project_start, and lets a dependent task start some days after its
+    predecessors finish instead of immediately."""
 
     @field_validator("predecessors")
     @classmethod

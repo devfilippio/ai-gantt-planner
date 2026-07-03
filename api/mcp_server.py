@@ -74,8 +74,12 @@ def add_task(
     assignee: str,
     duration_days: int,
     predecessors: list[str],
+    start_date: str | None = None,
+    lead_days: int | None = None,
 ) -> str:
-    """Добавляет новую задачу в план проекта."""
+    """Добавляет новую задачу в план проекта. `start_date` (YYYY-MM-DD) задаёт
+    дату начала для независимой задачи или отложенного старта — если указана,
+    имеет приоритет над `lead_days`."""
     return _run(
         "add_task",
         name=name,
@@ -83,6 +87,8 @@ def add_task(
         assignee=assignee,
         duration_days=duration_days,
         predecessors=predecessors,
+        start_date=start_date,
+        lead_days=lead_days,
     )
 
 
@@ -94,8 +100,12 @@ def update_task(
     assignee: str | None = None,
     duration_days: int | None = None,
     predecessors: list[str] | None = None,
+    start_date: str | None = None,
+    lead_days: int | None = None,
 ) -> str:
-    """Обновляет поля существующей задачи (только переданные поля изменяются)."""
+    """Обновляет поля существующей задачи (только переданные поля изменяются).
+    `start_date` (YYYY-MM-DD) пересчитывает `lead_days` так, чтобы задача
+    стартовала в указанную дату."""
     return _run(
         "update_task",
         id=id,
@@ -104,6 +114,8 @@ def update_task(
         assignee=assignee,
         duration_days=duration_days,
         predecessors=predecessors,
+        start_date=start_date,
+        lead_days=lead_days,
     )
 
 
