@@ -46,6 +46,14 @@
   font-size: 12px;
 }
 
+.toolbar__by {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: var(--text-mute);
+  white-space: nowrap;
+}
+
 .toolbar__label {
   font-family: var(--font-mono);
   font-size: 12px;
@@ -54,9 +62,10 @@
   white-space: nowrap;
 }
 
-@media (max-width: 560px) {
+@media (max-width: 720px) {
   .toolbar__divider,
-  .toolbar__label {
+  .toolbar__label,
+  .toolbar__by {
     display: none;
   }
 }

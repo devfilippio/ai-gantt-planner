@@ -91,6 +91,9 @@ export function Toolbar() {
       onDrop={handleDrop}
     >
       <div className="toolbar__brand">
+        <span className="toolbar__label">§ 00 · ПРОЕКТ</span>
+        <span className="toolbar__divider" aria-hidden="true">·</span>
+        <span className="toolbar__by">Автор — Филипп. Портфолио и контакты</span>
         <a
           className="toolbar__site"
           href="https://filipp.io/"
@@ -100,8 +103,6 @@ export function Toolbar() {
         >
           filipp.io <span aria-hidden="true">→</span>
         </a>
-        <span className="toolbar__divider" aria-hidden="true">·</span>
-        <span className="toolbar__label">§ 00 · ПРОЕКТ</span>
       </div>
 
       <div className="toolbar__actions">
