@@ -152,7 +152,7 @@ export function ChatPanel() {
               data-testid="chat-message"
               data-role={msg.role}
             >
-              {msg.text}
+              {msg.role === 'agent' ? msg.text.replace(/\*\*?/g, '') : msg.text}
             </div>
           );
         })}

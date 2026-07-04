@@ -1,4 +1,5 @@
-from api.agent import compact_plan, run_agent_turn
+from api.agent import changed_tasks_summary, compact_plan, run_agent_turn
+from api.scheduler import compute_schedule
 from api.seed import seed_plan
 
 
@@ -227,6 +228,89 @@ def test_mock_llm_routes_undo_keywords_to_undo_last_turn():
     ))
     tool_calls = [e for e in events if e["type"] == "tool_call"]
     assert tool_calls and tool_calls[0]["tool"] == "undo_last_turn"
+
+
+class RecordingLLMSecondCall:
+    """First call: one mutating tool call. Second call: records the tool
+    result message it was given, then finishes."""
+
+    def __init__(self, tool_call):
+        self.tool_call = tool_call
+        self.calls = 0
+        self.second_call_messages = None
+
+    def create(self, messages, tools):
+        self.calls += 1
+        if self.calls == 1:
+            return {"tool_calls": [self.tool_call]}
+        self.second_call_messages = [dict(m) for m in messages]
+        return {"content": "Готово."}
+
+
+def test_mutation_tool_result_does_not_dump_full_plan():
+    """Regression for F2: feeding the model the FULL compact_plan after every
+    mutation gave it plan-dump text to parrot back to the user (violating
+    "never list the whole plan" and producing markdown-laden replies). The
+    tool result for a mutation must mention only the changed task(s), not
+    every task in the plan."""
+    plan = seed_plan()
+    llm = RecordingLLMSecondCall(
+        {"id": "1", "name": "reassign_tasks",
+         "arguments": {"from_assignee": "Мария", "to_assignee": "Пётр"}}
+    )
+    list(run_agent_turn("переназначь Марию на Петра", plan, llm=llm))
+
+    tool_msgs = [m for m in llm.second_call_messages if m["role"] == "tool"]
+    assert tool_msgs
+    result_text = tool_msgs[-1]["content"]
+    # Every OTHER task's id must be absent from the mutation's tool result -
+    # only the changed tasks should be mentioned.
+    other_ids = [t.id for t in plan.tasks if t.assignee != "Мария"]
+    for tid in other_ids:
+        assert tid not in result_text, f"tool result leaked unrelated task id {tid!r}: {result_text}"
+
+
+def test_changed_tasks_summary_lists_only_changed_ids_with_dates():
+    plan = seed_plan()
+    schedule = {s.id: s for s in compute_schedule(plan)}
+    first_id = plan.tasks[0].id
+    text = changed_tasks_summary(plan, [first_id])
+    assert first_id in text
+    assert schedule[first_id].start in text
+    assert schedule[first_id].end in text
+    for t in plan.tasks[1:]:
+        assert t.id not in text
+
+
+def test_changed_tasks_summary_empty_changed_ids():
+    plan = seed_plan()
+    text = changed_tasks_summary(plan, [])
+    assert "OK" in text
+
+
+def test_no_tools_event_emitted_when_turn_makes_zero_tool_calls():
+    """Debug/test aid (Part 1d): a turn that ends in a plain content message
+    with no tool calls at all must emit a {"type": "no_tools"} SSE event."""
+    class NoToolLLM:
+        def create(self, messages, tools):
+            return {"content": "Уточните, пожалуйста, что вы имеете в виду."}
+
+    plan = seed_plan()
+    events = list(run_agent_turn("сделай план красивее", plan, llm=NoToolLLM()))
+    types = [e["type"] for e in events]
+    assert "no_tools" in types
+    assert "tool_call" not in types
+
+
+def test_no_tools_event_absent_when_a_tool_was_called():
+    plan = seed_plan()
+    llm = RecordingLLMSecondCall(
+        {"id": "1", "name": "reassign_tasks",
+         "arguments": {"from_assignee": "Мария", "to_assignee": "Пётр"}}
+    )
+    events = list(run_agent_turn("переназначь Марию на Петра", plan, llm=llm))
+    types = [e["type"] for e in events]
+    assert "no_tools" not in types
 
 
 def test_openrouter_cascades_to_fallback_key(monkeypatch):

@@ -51,6 +51,36 @@ def compact_plan(plan: Plan) -> str:
             )
         return "\n".join(lines)
 
+
+def changed_tasks_summary(plan: Plan, changed_ids: list[str]) -> str:
+    """A short tool-result string listing ONLY the tasks a mutation touched
+    (id, name, new start->end), instead of the full plan.
+
+    Feeding the model the whole compact_plan after every single mutation was
+    parrot fodder: the model would echo that full listing back to the user
+    in its final reply (real failure F2 — plain-text chat rendering markdown
+    dashes/bullets and a giant plan dump instead of a one-line confirmation).
+    Cutting the tool result down to just the changed rows removes the
+    material the model could copy, and shrinks tokens on every turn."""
+    if not changed_ids:
+        return "OK, применено. Изменённых задач нет."
+    try:
+        schedule = {s.id: s for s in compute_schedule(plan)}
+    except Exception:
+        schedule = {}
+    by_id = {t.id: t for t in plan.tasks}
+    lines = []
+    for tid in changed_ids:
+        t = by_id.get(tid)
+        if t is None:
+            continue  # e.g. deleted task — nothing to show
+        sched = schedule.get(tid)
+        span = f"{sched.start}→{sched.end}" if sched else "?"
+        lines.append(f"{t.id} · {t.name} · {span}")
+    if not lines:
+        return "OK, применено."
+    return "OK, применено. Изменённые задачи: " + "; ".join(lines)
+
 SYSTEM_PROMPT = """\
 Ты — ассистент по управлению планом проекта (диаграмма Ганта). Владелец плана \
 — пользователь: это его план и его задачи, а не корпоративный проект, который \
@@ -113,6 +143,22 @@ duration_days = число дней между датами (11→18 мая = 7 
 «отмени последнее изменение», «откати правку») — вызови инструмент \
 undo_last_turn. Он откатывает план к состоянию до последней применённой мутации.
 - Без эмодзи. Отвечай кратко и по-русски.
+
+Формат финального ответа:
+- 1-2 коротких предложения-подтверждения. НИКОГДА не перечисляй весь план в \
+ответе и не пересказывай списки задач — план виден пользователю на диаграмме \
+слева. Пересказ плана допустим ТОЛЬКО если пользователь явно попросил показать \
+или перечислить план.
+- Без markdown (никаких **, __, #, - в начале строки) — чат отображает простой \
+текст, разметка будет видна как есть.
+- Чтобы поменять сроки или даты СУЩЕСТВУЮЩЕЙ задачи — используй ОДИН вызов \
+update_task (поля start_date и/или duration_days). НИКОГДА не удаляй и не \
+пересоздавай задачу ради изменения дат — это не одно и то же действие, и это \
+теряет id, описание и связи задачи.
+- Категорический запрет фабрикации: если ты сообщаешь пользователю об \
+изменении плана, этому ОБЯЗАН предшествовать реальный вызов инструмента в \
+ЭТОМ ЖЕ ходе. Никогда не описывай в ответе изменения, которые ты не выполнил \
+вызовом инструмента.
 """
 
 
@@ -173,6 +219,7 @@ def run_agent_turn(
       {"type": "done"}
     """
     working_plan = plan
+    any_tool_called = False
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         # The model gets the current plan (with real task ids) up front, so it
@@ -192,6 +239,7 @@ def run_agent_turn(
         tool_calls = result.get("tool_calls")
 
         if tool_calls:
+            any_tool_called = True
             # Echo the assistant turn (with its tool_calls) into the history —
             # required by the OpenAI/OpenRouter protocol: a `tool` result must
             # follow an assistant message that declared the matching call id.
@@ -251,16 +299,15 @@ def run_agent_turn(
                 working_plan = patch.plan
                 yield {"type": "patch", "plan_patch": patch.model_dump()}
                 # Feed the REAL result back to the model. For get_plan that's
-                # the plan itself (otherwise the model asks again in a loop);
-                # for mutations — a confirmation plus the updated plan snapshot
-                # so follow-up calls use fresh ids/durations.
+                # the FULL plan (otherwise the model asks again in a loop, and
+                # get_plan is the one place the model legitimately needs the
+                # whole listing). For mutations — only the changed rows, so
+                # the model has nothing to parrot back as a full plan dump
+                # (see changed_tasks_summary).
                 if name == "get_plan":
                     tool_result = compact_plan(working_plan)
                 else:
-                    tool_result = (
-                        f"OK, применено. Изменённые задачи: {patch.changed_ids or []}.\n"
-                        f"План теперь:\n{compact_plan(working_plan)}"
-                    )
+                    tool_result = changed_tasks_summary(working_plan, patch.changed_ids)
                 messages.append({
                     "role": "tool",
                     "tool_call_id": call_id,
@@ -270,6 +317,13 @@ def run_agent_turn(
 
         content = result.get("content", "")
         yield {"type": "message", "text": content}
+        if not any_tool_called:
+            # Debugging/test aid: this turn ended without a single tool call
+            # (e.g. a clarifying question, an off-topic reply, or — the bug
+            # we're guarding against — the model claiming a change it never
+            # made). The frontend ignores unknown SSE event types, so this is
+            # inert in the UI; it just gives tests/logs a cheap signal.
+            yield {"type": "no_tools"}
         break
 
     yield {"type": "done"}
