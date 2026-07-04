@@ -11,3 +11,4 @@ dist/
 .venv/
 
 .vercel
+frontend/shot.cjs
