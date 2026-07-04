@@ -380,12 +380,18 @@ class OpenRouterLLM:
     key hitting its credit limit mid-demo degrades to the reserve key instead
     of an error in the chat."""
 
-    # Cheap-first: gpt-4o-mini passes the full chaos battery (8/8) at ~$0.0002
-    # per command because the harness carries the quality (plan snapshot in
-    # context, name->id resolution, arg validation). The expensive model is
-    # kept as an ESCALATION path for API errors, not the default.
-    PRIMARY_MODEL = "openai/gpt-4o-mini"
-    FALLBACK_MODEL = "anthropic/claude-sonnet-4.5"
+    # Quality-first, not cheap-first: a model bake-off (scripts/model_bakeoff.py)
+    # tested openai/gpt-4o-mini, google/gemini-2.5-flash, anthropic/claude-haiku-4.5
+    # and openai/gpt-4o against the harness-fixed agent (see run_agent_turn's
+    # trimmed tool results + the anti-fabrication/no-markdown/single-update-call
+    # system prompt rules). NONE of the four cheaper candidates reached a clean
+    # bar (S1-S5 5/5 AND the chaos-8 battery 8/8) - every one of them either
+    # fabricated/duplicated a mutation, picked the wrong tool for "increase all
+    # durations" (shift_tasks instead of update_task), or broke an assignee
+    # swap. anthropic/claude-sonnet-4.5 was the ONLY candidate to clear 5/5 + 8/8,
+    # so it is PRIMARY; gpt-4o is the escalation FALLBACK for API errors.
+    PRIMARY_MODEL = "anthropic/claude-sonnet-4.5"
+    FALLBACK_MODEL = "openai/gpt-4o"
 
     def __init__(self) -> None:
         import openai
