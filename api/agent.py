@@ -326,8 +326,12 @@ class OpenRouterLLM:
     key hitting its credit limit mid-demo degrades to the reserve key instead
     of an error in the chat."""
 
-    PRIMARY_MODEL = "anthropic/claude-sonnet-4.5"
-    FALLBACK_MODEL = "openai/gpt-4o"
+    # Cheap-first: gpt-4o-mini passes the full chaos battery (8/8) at ~$0.0002
+    # per command because the harness carries the quality (plan snapshot in
+    # context, name->id resolution, arg validation). The expensive model is
+    # kept as an ESCALATION path for API errors, not the default.
+    PRIMARY_MODEL = "openai/gpt-4o-mini"
+    FALLBACK_MODEL = "anthropic/claude-sonnet-4.5"
 
     def __init__(self) -> None:
         import openai
