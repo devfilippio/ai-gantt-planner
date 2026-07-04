@@ -17,6 +17,11 @@ interface PlanState {
   chatLog: ChatMessage[];
   loading: boolean;
   error: string | null;
+  // Set when the user clicks a CommandsGuide card — ChatPanel picks it up,
+  // drops the text into the input, focuses it, then clears this back to
+  // null. A plain string ref would work too, but routing it through the
+  // store keeps CommandsGuide decoupled from ChatPanel's internal refs.
+  draftCommand: string | null;
 
   loadPlan: () => Promise<void>;
   resetPlan: () => Promise<void>;
@@ -25,6 +30,7 @@ interface PlanState {
   clearToolChips: () => void;
   undo: () => Promise<void>;
   resizeTask: (id: string, patch: TaskUpdate) => Promise<void>;
+  setDraftCommand: (text: string | null) => void;
 }
 
 let highlightTimer: ReturnType<typeof setTimeout> | undefined;
@@ -36,6 +42,7 @@ export const usePlanStore = create<PlanState>((set, get) => ({
   chatLog: [],
   loading: false,
   error: null,
+  draftCommand: null,
 
   loadPlan: async () => {
     set({ loading: true, error: null });
@@ -97,6 +104,10 @@ export const usePlanStore = create<PlanState>((set, get) => ({
     } catch (err) {
       set({ error: (err as Error).message, loading: false });
     }
+  },
+
+  setDraftCommand: (text: string | null) => {
+    set({ draftCommand: text });
   },
 
   resizeTask: async (id: string, patch: TaskUpdate) => {
