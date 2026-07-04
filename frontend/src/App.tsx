@@ -16,24 +16,38 @@ function App() {
   }, [loadPlan]);
 
   return (
-    <main className="app-shell">
-      <div className="app-shell__chart">
-        <Toolbar />
-        <GanttChart onSelectTask={setSelectedTaskId} />
-        <CommandsGuide />
-      </div>
-      <aside className="app-shell__chat" aria-label="AI-агент">
-        <ChatPanel />
-      </aside>
+    <>
+      <main className="app-shell">
+        <div className="app-shell__chart">
+          <Toolbar />
+          <GanttChart onSelectTask={setSelectedTaskId} />
+          <CommandsGuide />
+        </div>
+        <aside className="app-shell__chat" aria-label="AI-агент">
+          <ChatPanel />
+        </aside>
 
-      {selectedTaskId && (
-        <TaskModal
-          taskId={selectedTaskId}
-          onClose={() => setSelectedTaskId(null)}
-          onSelectTask={setSelectedTaskId}
-        />
-      )}
-    </main>
+        {selectedTaskId && (
+          <TaskModal
+            taskId={selectedTaskId}
+            onClose={() => setSelectedTaskId(null)}
+            onSelectTask={setSelectedTaskId}
+          />
+        )}
+      </main>
+
+      <footer className="site-footer" data-testid="site-footer">
+        <span className="site-footer__by">Автор — Филипп. Портфолио и контакты</span>
+        <a
+          className="site-footer__link"
+          href="https://filipp.io/"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          filipp.io <span aria-hidden="true">→</span>
+        </a>
+      </footer>
+    </>
   );
 }
 
