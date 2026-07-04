@@ -17,12 +17,48 @@
   background: color-mix(in srgb, var(--accent) 6%, var(--surface-1));
 }
 
+.toolbar__brand {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.toolbar__site {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: opacity 140ms ease;
+}
+
+.toolbar__site:hover {
+  opacity: 0.8;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.toolbar__divider {
+  color: var(--text-mute);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
 .toolbar__label {
   font-family: var(--font-mono);
   font-size: 12px;
   letter-spacing: 0.08em;
   color: var(--text-dim);
   white-space: nowrap;
+}
+
+@media (max-width: 560px) {
+  .toolbar__divider,
+  .toolbar__label {
+    display: none;
+  }
 }
 
 .toolbar__actions {

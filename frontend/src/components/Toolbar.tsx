@@ -90,7 +90,19 @@ export function Toolbar() {
       onDragLeave={() => setDragOver(false)}
       onDrop={handleDrop}
     >
-      <span className="toolbar__label">§ 00 · ПРОЕКТ</span>
+      <div className="toolbar__brand">
+        <a
+          className="toolbar__site"
+          href="https://filipp.io/"
+          target="_blank"
+          rel="noopener noreferrer"
+          data-testid="site-link"
+        >
+          filipp.io <span aria-hidden="true">→</span>
+        </a>
+        <span className="toolbar__divider" aria-hidden="true">·</span>
+        <span className="toolbar__label">§ 00 · ПРОЕКТ</span>
+      </div>
 
       <div className="toolbar__actions">
         <label className="toolbar__button" data-busy={busy}>
