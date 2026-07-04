@@ -50,15 +50,28 @@ export function ChatPanel() {
   const pushChat = usePlanStore((s) => s.pushChat);
   const applyPatch = usePlanStore((s) => s.applyPatch);
   const undo = usePlanStore((s) => s.undo);
+  const draftCommand = usePlanStore((s) => s.draftCommand);
+  const setDraftCommand = usePlanStore((s) => s.setDraftCommand);
 
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const logRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     const el = logRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [chatLog]);
+
+  // CommandsGuide sets draftCommand when a card is clicked. Pick it up here:
+  // drop the text into the input, focus it so the user can hit Enter right
+  // away, then clear the draft so re-clicking the same card still fires.
+  useEffect(() => {
+    if (draftCommand === null) return;
+    setInput(draftCommand);
+    inputRef.current?.focus();
+    setDraftCommand(null);
+  }, [draftCommand, setDraftCommand]);
 
   const send = async (message: string) => {
     const text = message.trim();
@@ -168,6 +181,7 @@ export function ChatPanel() {
 
       <form className="chat-panel__form" onSubmit={handleSubmit}>
         <input
+          ref={inputRef}
           type="text"
           className="chat-panel__input"
           data-testid="chat-input"

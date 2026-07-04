@@ -4,6 +4,7 @@ import { GanttChart } from './components/GanttChart';
 import { ChatPanel } from './components/ChatPanel';
 import { TaskModal } from './components/TaskModal';
 import { Toolbar } from './components/Toolbar';
+import { CommandsGuide } from './components/CommandsGuide';
 import './App.css';
 
 function App() {
@@ -19,6 +20,7 @@ function App() {
       <div className="app-shell__chart">
         <Toolbar />
         <GanttChart onSelectTask={setSelectedTaskId} />
+        <CommandsGuide />
       </div>
       <aside className="app-shell__chat" aria-label="AI-агент">
         <ChatPanel />

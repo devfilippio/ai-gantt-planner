@@ -1,0 +1,106 @@
+.commands-guide {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 20px;
+  padding: 18px;
+  background: var(--surface-1);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-sizing: border-box;
+}
+
+.commands-guide__title {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.14em;
+  color: var(--accent);
+}
+
+.commands-guide__grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.commands-guide__card {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  text-align: left;
+  background: #0f0f11;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+
+.commands-guide__card:hover,
+.commands-guide__card:focus-visible {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 5%, #0f0f11);
+}
+
+.commands-guide__card:focus-visible {
+  outline: none;
+}
+
+.commands-guide__card:active {
+  transform: scale(0.995);
+}
+
+.commands-guide__glyph {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.commands-guide__text {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-dim);
+  transition: color 140ms ease;
+}
+
+.commands-guide__card:hover .commands-guide__text,
+.commands-guide__card:focus-visible .commands-guide__text {
+  color: var(--text);
+}
+
+.commands-guide__category {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  color: var(--text-mute);
+  white-space: nowrap;
+}
+
+.commands-guide__footnote {
+  margin: 4px 0 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--text-mute);
+}
+
+@media (max-width: 860px) {
+  .commands-guide__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .commands-guide__card {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .commands-guide__category {
+    margin-left: 20px;
+  }
+}
