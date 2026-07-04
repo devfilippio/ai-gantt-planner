@@ -49,6 +49,7 @@ export function ChatPanel() {
   const chatLog = usePlanStore((s) => s.chatLog);
   const pushChat = usePlanStore((s) => s.pushChat);
   const applyPatch = usePlanStore((s) => s.applyPatch);
+  const syncPlan = usePlanStore((s) => s.syncPlan);
   const undo = usePlanStore((s) => s.undo);
   const draftCommand = usePlanStore((s) => s.draftCommand);
   const setDraftCommand = usePlanStore((s) => s.setDraftCommand);
@@ -102,6 +103,12 @@ export function ChatPanel() {
           pushChat({ role: 'error', text: event.detail });
         }
       }, history);
+      // The stream has ended. Reconcile the chart with the server's
+      // authoritative plan so a dropped mid-stream patch can never leave the
+      // Gantt out of sync (owner hit: an added task confirmed in chat but not
+      // showing on the chart). The live patches already ran the animation;
+      // this just guarantees the final state is correct.
+      await syncPlan();
     } catch (err) {
       pushChat({ role: 'error', text: (err as Error).message });
     } finally {

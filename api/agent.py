@@ -355,6 +355,14 @@ class MockLLM:
         if "мари" in text and "петр" in text:
             return {"tool_calls": [{"id": "1", "name": "reassign_tasks",
                     "arguments": {"from_assignee": "Мария", "to_assignee": "Пётр"}}]}
+        if "молоко" in text and ("13" in text or "добав" in text or "купит" in text):
+            # Independent task with an explicit far-future start date — the
+            # exact shape the owner used («анна купит молоко 13 июля до 15»)
+            # that added on the backend but failed to appear on the chart.
+            return {"tool_calls": [{"id": "1", "name": "add_task",
+                    "arguments": {"name": "Купить молоко", "description": "",
+                                  "assignee": "Анна", "duration_days": 2,
+                                  "predecessors": [], "start_date": "2026-07-13"}}]}
         if "добавь" in text and "аналитик" in text:
             # Predecessor is given by NAME on purpose — exercises the
             # name→id resolution in tool_registry the way a real LLM does.

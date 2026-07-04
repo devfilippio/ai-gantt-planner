@@ -31,6 +31,7 @@ interface PlanState {
   undo: () => Promise<void>;
   resizeTask: (id: string, patch: TaskUpdate) => Promise<void>;
   setDraftCommand: (text: string | null) => void;
+  syncPlan: () => Promise<void>;
 }
 
 let highlightTimer: ReturnType<typeof setTimeout> | undefined;
@@ -108,6 +109,22 @@ export const usePlanStore = create<PlanState>((set, get) => ({
 
   setDraftCommand: (text: string | null) => {
     set({ draftCommand: text });
+  },
+
+  // Reconcile the chart with the server's authoritative plan after a chat turn
+  // ends. The live SSE `patch` events drive the animation mid-turn, but if one
+  // is dropped (a mid-stream connection blip, or a serverless cold start), the
+  // chart could end a turn out of sync with the server. Pulling the plan on
+  // turn completion guarantees the final state always converges to the truth —
+  // no loading flicker, no changedIds (the animation already happened).
+  syncPlan: async () => {
+    try {
+      const { plan, schedule } = await getPlan();
+      set({ plan, schedule });
+    } catch {
+      // A failed reconcile leaves the last SSE-applied state in place — no
+      // worse than not reconciling at all.
+    }
   },
 
   resizeTask: async (id: string, patch: TaskUpdate) => {
