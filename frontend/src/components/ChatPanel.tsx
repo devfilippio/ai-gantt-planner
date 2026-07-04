@@ -27,11 +27,6 @@ function historyFromChatLog(chatLog: ChatMessage[]): ChatHistoryTurn[] {
   return turns.slice(-HISTORY_CAP);
 }
 
-const EXAMPLE_COMMANDS = [
-  'перенеси задачи Олега на неделю',
-  'переназначь задачи Марии на Петра',
-];
-
 /** Best-effort extraction of task ids a tool call touched, so TaskModal can
  * later filter the chat log's history to a single task. Not exhaustive for
  * every tool shape — assignee-scoped tools (shift/reassign) can't name
@@ -136,23 +131,6 @@ export function ChatPanel() {
       </div>
 
       <div className="chat-panel__log" ref={logRef}>
-        {chatLog.length === 0 && (
-          <div className="chat-panel__empty">
-            <p>Опишите изменение плана обычным языком.</p>
-            <div className="chat-panel__hints">
-              {EXAMPLE_COMMANDS.map((cmd) => (
-                <button
-                  key={cmd}
-                  type="button"
-                  className="chat-panel__hint"
-                  onClick={() => setInput(cmd)}
-                >
-                  {cmd}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
 
         {chatLog.map((msg, i) => {
           if (msg.role === 'tool_call') {
