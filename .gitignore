@@ -12,3 +12,4 @@ dist/
 
 .vercel
 frontend/shot.cjs
+docs-private/
